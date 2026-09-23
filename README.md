@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/easlee_logo.png" alt="EASLEE logo" width="180">
+</p>
+
 # EASLEE — transport distribution
 
 An atmospheric **Lagrangian particle dispersion model** (LPDM) written in
