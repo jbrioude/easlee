@@ -1,0 +1,60 @@
+# Météo-France AROME 0.025° ATMO-HDF dissemination (GRIB2, height-AGL levels,
+# boundary-layer only — model top 3 km).  Run 2025-09-04 03Z, hourly steps.
+# HP1 = 3D height-level fields (primary); SP1/SP2/SP3 = surface companions.
+# NB: this dataset carries NO vertical velocity → vertical transport is
+# turbulence-only by design (see metaromehdffieldcalculation!).
+name = "arome_hdf_france"
+
+[[meteorology]]
+available = "auto"
+model     = "AROME_HDF"
+path      = "/home/jbrioude/Desktop/julia/AROME_nath/GRIB2/"
+variables = "AROME_HDF"
+
+[run]
+direction = "forward"
+start     = 2025-09-04T04:00:00.000Z
+stop      = 2025-09-04T07:00:00.000Z
+timestep  = "15min"
+
+[physics]
+ctl   = 5.0
+ifine = 4
+    [physics.turbulence]
+    scheme = "hanna"
+    [physics.convection]
+    scheme = "off"
+    [physics.vertical]
+    mode = "kinematic"
+
+[[species]]
+id   = "tracer"
+kind = "gas"
+
+[[release]]
+comment   = "Paris-area boundary-layer release"
+species   = "tracer"
+lon       = [2.0, 2.6]
+lat       = [48.6, 49.0]
+z         = [100.0, 500.0]
+zkind     = "agl"
+mass      = "1.0kg"
+particles = 5000
+time      = [2025-09-04T04:00:00.000Z, 2025-09-04T05:00:00.000Z]
+
+[output]
+quantity = "concentration"
+interval = "1h"
+average  = "15min"
+sample   = "15min"
+path     = "juliaout/arome_hdf_france/"
+
+    [output.grid]
+    crs  = "lonlat"
+    lon0 = 0.0
+    lat0 = 46.0
+    dx   = 0.05
+    dy   = 0.05
+    nx   = 120
+    ny   = 120
+    heights = [0.0, 100.0, 500.0, 1000.0, 2000.0, 3000.0]

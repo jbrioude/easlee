@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EASLEE</title>
+  <link rel="icon" type="image/svg+xml" href="easlee_mark.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Menu bar ──────────────────────────────────────────────────────────── -->
+  <div id="menubar">
+    <img id="brand-logo" src="easlee_mark.svg" alt="EASLEE"
+         style="height:22px;margin:0 12px 0 6px;vertical-align:middle">
+    <div class="menu-item">File
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="document.getElementById('toml-path').focus()">Load config (TOML)…</div>
+        <div class="dropdown-item" onclick="downloadTomlConfig()">Download config (TOML)…</div>
+        <div class="dropdown-sep"></div>
+        <div class="dropdown-item" onclick="window.location.reload()">Reload page</div>
+      </div>
+    </div>
+    <div class="menu-item">Model
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="controlAction('run')">▶ Run</div>
+        <div class="dropdown-item" onclick="controlAction('pause')">⏸ Pause</div>
+        <div class="dropdown-item" onclick="controlAction('resume')">▶ Resume</div>
+        <div class="dropdown-sep"></div>
+        <div class="dropdown-item" onclick="controlAction('stop')">■ Stop</div>
+      </div>
+    </div>
+    <div class="menu-item">View
+      <div class="dropdown">
+        <div class="dropdown-item" onclick="setView('column')">Column tracer</div>
+        <div class="dropdown-item" onclick="setView('cross')">Cross-section</div>
+        <div class="dropdown-item" onclick="setView('particles')">Particles</div>
+        <div class="dropdown-item" onclick="setView('met')">Met field</div>
+      </div>
+    </div>
+    <div id="status-bar">
+      <span id="status-dot">●</span>
+      <span id="status-text">idle</span>
+      <span class="sep">|</span>
+      <span id="status-progress">0%</span>
+      <span class="sep">|</span>
+      <span id="status-time">--:--:--</span>
+      <span class="sep">|</span>
+      <span id="status-nactive">active: 0</span>
+    </div>
+  </div>
+
+  <!-- ── Tab bar ───────────────────────────────────────────────────────────── -->
+  <div id="tabbar">
+    <div class="tab active" data-tab="config"  onclick="switchTab('config')">Config</div>
+    <div class="tab"        data-tab="figures" onclick="switchTab('figures')">Figures</div>
+    <div class="tab"        data-tab="console" onclick="switchTab('console')">Console</div>
+  </div>
+
+  <!-- ── Tab: Config (schema-driven, auto-generated from /api/schema) ───────── -->
+  <div id="tab-config" class="tab-content active">
+    <!-- toolbar -->
+    <div class="config-toolbar">
+      <button onclick="loadSchemaForm()">↻ Reload</button>
+      <button onclick="saveSchemaForm()">💾 Save</button>
+      <button onclick="downloadTomlConfig()">⤓ Download TOML</button>
+      <button onclick="openMapModal()" title="Place the release by clicking on the met domain">📍 Release map</button>
+      <span class="spacer"></span>
+      <input type="text" id="toml-path" placeholder="configs/era5_conv.toml">
+      <button onclick="loadTomlConfig()">📂 Load TOML</button>
+      <button class="browse-btn" title="Browse for a config file" onclick="browseInto('toml-path','file')">📁</button>
+    </div>
+    <!-- options: schema groups laid out as a responsive grid (the two option tiers) -->
+    <div class="config-options">
+      <div id="schema-form"></div>
+    </div>
+    <!-- centered run controls -->
+    <div class="control-bar centered">
+      <button class="btn-run"    onclick="saveSchemaForm().then(ok=>ok&&controlAction('run'))">▶ RUN</button>
+      <button class="btn-pause"  onclick="controlAction('pause')">⏸ PAUSE</button>
+      <button class="btn-resume" onclick="controlAction('resume')">▶ RESUME</button>
+      <button class="btn-stop"   onclick="controlAction('stop')">■ STOP</button>
+    </div>
+    <div class="progress-row">
+      <div class="progress-wrap"><div id="progress-bar"></div></div>
+      <span id="progress-label">0%</span>
+    </div>
+    <!-- bottom tier: model log -->
+    <div class="config-logs"><div id="log-output"></div></div>
+  </div>
+
+  <!-- ── Tab: Figures ──────────────────────────────────────────────────────── -->
+  <div id="tab-figures" class="tab-content">
+    <div class="fig-controls">
+      <div class="btn-group">
+        <button onclick="setView('column')">Column</button>
+        <button onclick="setView('cross')">Cross-section</button>
+        <button onclick="setView('particles')">Particles</button>
+        <button onclick="setView('met')">Met field</button>
+      </div>
+      <label>Species:
+        <select id="species-sel" onchange="updateFigure()" title="Output field to plot (column / cross-section)">
+          <option value="">(default)</option>
+        </select>
+      </label>
+      <label>Field:
+        <select id="met-field-sel" onchange="updateFigure()">
+          <option>Ux</option><option>Vy</option><option>T</option>
+          <option>rho</option><option>levdot</option><option>zlev</option>
+        </select>
+      </label>
+      <label>Level:
+        <input type="number" id="level-input" value="1" min="1" max="200"
+               style="width:52px" onchange="updateFigure()">
+      </label>
+      <label>Lat slice:
+        <input type="range" id="lat-slice" min="0" max="1" step="0.01" value="0.5"
+               oninput="updateFigure()">
+      </label>
+      <button onclick="updateFigure()">↻ Refresh</button>
+      <label class="check-label">
+        <input type="checkbox" id="auto-refresh" checked> Auto
+      </label>
+    </div>
+    <div id="fig-container">
+      <img id="fig-img" alt="No data yet — run the model first">
+    </div>
+  </div>
+
+  <!-- ── Tab: Console ──────────────────────────────────────────────────────── -->
+  <div id="tab-console" class="tab-content">
+    <div id="repl-scroll">
+      <div id="repl-output">
+        <div class="repl-line repl-info">EASLEE REPL — expressions are eval'd in Main</div>
+        <div class="repl-line repl-info">After run: rt, ctx, state, nestctx are available</div>
+        <div class="repl-line repl-info">stdout from print() goes to the terminal running Julia</div>
+        <div class="repl-line repl-info" style="margin-bottom:8px">──────────────────────────────────────────</div>
+      </div>
+    </div>
+    <div id="repl-input-row">
+      <span class="repl-prompt">julia&gt;</span>
+      <input type="text" id="repl-input"
+             placeholder="type expression and press Enter…"
+             autocomplete="off" spellcheck="false">
+      <button onclick="evalRepl()">Eval</button>
+    </div>
+  </div>
+
+  <!-- ── Path picker modal ─────────────────────────────────────────────────── -->
+  <div id="path-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-head">
+        <span id="path-modal-title">Select a folder or file</span>
+        <span class="spacer"></span>
+        <button onclick="closePathModal()">✕</button>
+      </div>
+      <div id="path-breadcrumb" class="path-breadcrumb"></div>
+      <div id="path-list" class="path-list"></div>
+      <div class="modal-foot">
+        <input id="path-current" type="text" readonly>
+        <button onclick="choosePathFolder()">Select this folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Release-location map modal ────────────────────────────────────────── -->
+  <div id="map-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:min(840px,95vw)">
+      <div class="modal-head">
+        <span>Release location — click on the met domain</span>
+        <span class="spacer"></span>
+        <span id="map-readout" style="font-family:var(--mono);font-size:11px;color:var(--fg2)"></span>
+        <button onclick="closeMapModal()">✕</button>
+      </div>
+      <div id="map-body" style="padding:8px;background:var(--bg0);overflow:auto"></div>
+      <div class="modal-foot">
+        <span id="map-status" style="flex:1;color:var(--muted);font-size:11px"></span>
+        <button class="btn-run" onclick="useMapLocation()">Set release here</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="schema_form.js"></script>
+</body>
+</html>

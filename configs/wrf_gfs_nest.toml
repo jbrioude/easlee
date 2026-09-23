@@ -1,0 +1,128 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# wrf_gfs_nest.toml — WRF as the INNER nest, NCEP GFS 0.25° as the outer driver.
+#
+#   julia --project=easlee scripts/easlee.jl configs/wrf_gfs_nest.toml
+#
+# Same nesting rule as wrf_era5_nest.toml: one [[meteorology]] per nest, FINEST
+# FIRST; a parcel that leaves the WRF domain is handed to GFS and keeps going.
+#
+# GFS specifics (see docs/MET_DATA.md):
+#   • GRIB2 pgrb2.0p25, ONE valid time per file
+#     (<date>/<cycle>/gfs.tCCz.pgrb2.0p25.fFFF), global 1440×721.
+#   • 33 ISOBARIC levels, 1000 → 1 hPa: a pressure ladder, not hybrid levels.
+#     Height comes from `gh − orog`.  Vertical resolution near the ground is
+#     coarse — that is exactly why the WRF nest is there.
+#   • No archived convective mass fluxes, but `cape`/`cin` ARE mapped, so the
+#     DIAGNOSTIC convection scheme (`scheme = "cape"`) is available.
+#   • Wet deposition uses a pseudo-3-D precipitation flux built from `prate`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "wrf_gfs_nest"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 2026-06-03T06:00:00
+stop      = 2026-06-05T06:00:00
+timestep  = "15min"
+threads   = 8
+
+# ── Nest 1 — WRF (finest) ────────────────────────────────────────────────────
+[[meteorology]]
+model     = "WRF"
+path      = "/data/WRF/my_run/"
+variables = "WRFv2"
+available = "auto"
+crop      = "off"
+
+# ── Nest 2 — NCEP GFS 0.25° (outer, global) ──────────────────────────────────
+# `path` is the cycle directory holding gfs.tCCz.pgrb2.0p25.fFFF for the run
+# window (analysis + forecast hours).  `available = "auto"` reads each file's
+# valid time and orders them.
+[[meteorology]]
+model     = "GFS"
+path      = "/data/NCEP_GFS/GFS/20260603/00/"
+variables = "GFS"
+available = "auto"
+crop      = "off"
+
+[[species]]
+id             = "tracer"
+kind           = "gas"
+molar_mass     = 100.0
+dry_deposition = false
+wet_deposition = false
+
+[[release]]
+species   = "tracer"
+lon       = [-97.9, -97.7]
+lat       = [39.5, 39.7]
+z         = ["100m", "300m"]
+zkind     = "agl"
+time      = [2026-06-03T06:00:00, 2026-06-03T07:00:00]
+particles = 200000
+mass      = "1kg"
+
+[physics]
+ctl   = 5.0
+ifine = 4
+
+    [physics.turbulence]
+    scheme   = "hanna"                 # ustar from GFS stress, L from the heat
+                                       # flux, PBL height from a bulk-Richardson
+                                       # profile (derived chain, see MET_DATA.md)
+    onthefly = false
+    sigw_ft  = 0.1
+    kh_ft    = 0.0                     # keep 0 while [physics.mixing] is on
+
+    [physics.convection]
+    scheme   = "cape"                  # diagnostic: GFS has no archived mass
+                                       # fluxes.  CAPE-gated redistribution of
+                                       # parcels below the θe equilibrium level.
+    cape_min = 100.0                   # event threshold [J/kg]
+    cin_max  = 50.0                    # skip columns capped more strongly
+    tau_mix  = ""                      # empty = the extreme (instantaneous) limit
+
+    [physics.deposition]
+    dry = false
+    wet = false                        # set true to use the pseudo-3-D tpf
+                                       # built from GFS `prate` (+ tcdc)
+
+    [physics.vertical]
+    mode     = "kinematic"
+    diabatic = true
+
+    [physics.mixing]
+    scheme        = "pairwise"
+    K_h           = 1000.0
+    sigma0_h      = ""
+    sigma_v       = ""
+    background    = true
+    nsig          = 2.0
+    max_neighbors = 30
+    every         = 1
+
+[output]
+quantity    = "both"
+path        = "juliaout/wrf_gfs_nest/"
+interval    = "1h"
+average     = "1h"
+sample      = "15min"
+per_release = true
+per_species = true
+group       = "species"
+
+kernel          = "adaptive"
+resolution      = true
+bandwidth_floor = "dispersion"
+floor_sigma_v   = 0.5
+floor_tl        = "5min"
+
+    [output.grid]
+    lon0    = -110.0
+    lat0    = 30.0
+    nx      = 200
+    ny      = 140
+    dx      = 0.25
+    dy      = 0.25
+    heights = [0.0, 100.0, 300.0, 600.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0]

@@ -1,0 +1,7 @@
+juliaout/
+results/
+*.nc
+*.jls
+easlee_sysimage.*
+easlee/Manifest.toml
+webgui/Manifest.toml

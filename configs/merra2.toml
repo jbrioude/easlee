@@ -1,0 +1,64 @@
+# MERRA2 (0.5°×0.625° global, model levels) — benchmarking config.
+# tavg3_3d_asm_Nv daily files (3-hourly), companion mst_Ne; 2022-01-15.
+name = "merra2"
+
+[[meteorology]]
+available = "auto"
+model     = "MERRA2"
+path      = "/data/MERRA2/"
+variables = "MERRA2"
+
+[output]
+quantity = "concentration"
+interval = "3h"
+average  = "15min"
+sample   = "15min"
+path     = "juliaout/merra2/"
+
+    [output.grid]
+    lon0 = -180.0
+    lat0 = -90.0
+    dx   = 0.625
+    dy   = 0.5
+    nx   = 576
+    ny   = 361
+    heights = [0.0, 100.0]
+
+[physics]
+ctl   = 5.0
+ifine = 4
+    [physics.turbulence]
+    scheme   = "hanna"
+    onthefly = false
+    [physics.convection]
+    scheme = "massflux"
+    [physics.deposition]
+    dry = false
+    wet = false
+    [physics.vertical]
+    mode     = "kinematic"
+    diabatic = true
+
+[[release]]
+comment   = "MERRA2 profiling release"
+lat       = [40.0, 41.0]
+lon       = [0.0, 1.0]
+z         = [200.0, 1500.0]
+zkind     = "agl"
+mass      = "1.0kg"
+particles = 200000
+species   = "spec24"
+time      = [2022-01-15T01:30:00.000Z, 2022-01-15T01:30:00.000Z]
+
+[run]
+direction = "forward"
+start     = 2022-01-15T01:30:00.000Z
+stop      = 2022-01-15T04:30:00.000Z
+timestep  = "15min"
+
+[[species]]
+id = "spec24"
+kind = "gas"
+specnum = 24
+dry_deposition = false
+wet_deposition = false

@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# volcanic_mixing.toml — the MIXING member of a single-factor twin.
+#
+#   julia --project=easlee scripts/easlee.jl configs/volcanic_mixing.toml
+#
+# Identical to volcanic_nomix.toml in every respect EXCEPT the inter-trajectory
+# mixing engine, which is ON here ([physics.mixing] = "pairwise"):
+#   • Fickian tracer-mass exchange between co-located same-species parcels
+#     (docs/CONFIG.md [physics.mixing]: Gaussian pair weights, second-moment
+#     renormalisation to K_h, θ-limiter, exact mass conservation);
+#   • coverage-based background term (q_bg = 0): parcels at the cloud EDGE
+#     (cov < 1) entrain zero-tracer ambient air at rate (1−cov)·K_h/σ₀², while
+#     interior parcels, fully surrounded by neighbours, see none.
+# Differencing the two runs isolates what inter-trajectory mixing and ambient
+# entrainment do to the plume — and shows the concentration-gradient retention
+# a Lagrangian representation offers over an Eulerian one.
+#
+# Demonstrates the volcanic source path (docs/PLUME_RISE.md):
+#   [[release]] kind = "volcanic"     — vent point + a time-resolved injection
+#                                       table (phases: t0, t1, z_bot, z_top, frac)
+#   [release.plume_rise] mode="parcels" — each trajectory RISES through a
+#                                       Lagrangian plume phase (buoyancy,
+#                                       entrainment, two-phase washout) and
+#                                       enters transport at its own EMERGENT
+#                                       detrainment height, its mass scaled by
+#                                       the washout survival of its species.
+#                                       `mass` is therefore the AT-VENT load.
+#   umbrella_spread = true            — gravity-current radial outflow at the
+#                                       intrusion level.
+#
+# The vent, dates, MER and masses below are ILLUSTRATIVE round numbers, not a
+# calibrated event. Replace them with your own.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "volcanic_mixing"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 2024-06-01T00:00:00
+stop      = 2024-06-01T18:00:00
+timestep  = "15min"
+threads   = 6
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5/2024/"
+variables = "ERA5_CONV"
+available = "auto"
+
+[[species]]
+id   = "SO2"
+kind = "gas"
+
+[[release]]
+species   = "SO2"
+kind      = "volcanic"          # vent point source + injection table
+lon       = [15.00]             # vent longitude [°E]
+lat       = [37.75]             # vent latitude  [°N]
+time      = [2024-06-01T00:00:00, 2024-06-01T06:00:00]
+particles = 100000
+mass      = "0.1Tg"             # AT-VENT load (mode="parcels" applies washout)
+
+    [release.volcanic]
+    profile = "umbrella"        # timing + per-phase mass split only in parcels mode
+    phases = [
+      [2024-06-01T00:00:00, 2024-06-01T01:00:00, "5km", "18km", 0.5],
+      [2024-06-01T01:00:00, 2024-06-01T03:00:00, "5km", "14km", 0.5],
+    ]
+
+    [release.plume_rise]
+    scheme          = "volcanic"   # 1-D moist eruption column
+    mode            = "parcels"    # Lagrangian plume phase (needs scheme=volcanic)
+    umbrella_spread = true         # gravity-current radial outflow at intrusion
+    mer             = 1.0e7        # mass eruption rate of the total mixture [kg/s]
+    temperature     = 1000.0       # mixture temperature at the vent [K]
+    water_frac      = 0.05         # vapour mass fraction at the vent
+
+[physics]
+ctl   = 5.0
+ifine = 4
+
+    # ── the single factor under test ─────────────────────────────────────────
+    [physics.mixing]
+    scheme     = "pairwise"
+    K_h        = 1000.0     # lower-stratospheric horizontal eddy diffusivity [m²/s]
+    sigma_v    = "300m"     # vertical pair half-width ≈ the met level spacing aloft
+                            # (the turbulent yl aloft is ~10 m: too thin to pair)
+    background = true       # edge entrainment of ambient (zero-tracer) air
+                            # sigma0_h omitted → auto (the met grid spacing)
+
+    [physics.turbulence]
+    scheme    = "hanna"
+    mesoscale = true               # sub-grid wind fluctuations
+
+    [physics.vertical]
+    mode     = "hybrid"            # buoyancy-consistent aloft
+    diabatic = true
+
+[output]
+quantity   = "concentration"
+path       = "juliaout/volcanic_mixing/"
+kernel     = "adaptive"
+resolution = true
+interval   = "1h"
+average    = "1h"
+sample     = "15min"
+
+    [output.grid]
+    lon0    = 5.0
+    lat0    = 30.0
+    nx      = 120
+    ny      = 80
+    dx      = 0.25
+    dy      = 0.25
+    heights = [0.0, 5000.0, 8000.0, 10000.0, 12000.0, 14000.0, 16000.0,
+               18000.0, 20000.0, 25000.0]

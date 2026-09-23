@@ -1,0 +1,66 @@
+# Meso-NH (AEROMARINE, ~2 km Indian Ocean) — benchmarking config.
+# Hourly BOR*.nc (one time/file); domain ~53.7–61.3°E, −27.3…−18.5°N. 2019-03-21.
+name = "mesonh"
+
+[[meteorology]]
+available = "auto"
+model     = "MESONH"
+path      = "/data/MESONH_AEROMARINE/"
+variables = "MESONH"
+
+[output]
+quantity = "concentration"
+interval = "1h"
+average  = "15min"
+sample   = "15min"
+path     = "juliaout/mesonh/"
+
+    [output.grid]
+    # The output grid is always geographic, whatever projection the met uses
+    # (MesoNH here is Mercator).  ~2 km ≈ 0.02° over Borneo.
+    lon0    = 109.0
+    lat0    = -2.0
+    nx      = 400
+    ny      = 400
+    dx      = 0.02
+    dy      = 0.02
+    heights = [0.0, 100.0, 500.0, 1000.0, 2000.0, 5000.0]
+
+[physics]
+ctl   = 5.0
+ifine = 4
+    [physics.turbulence]
+    scheme   = "hanna"
+    onthefly = false
+    [physics.convection]
+    scheme = "massflux"
+    [physics.deposition]
+    dry = false
+    wet = false
+    [physics.vertical]
+    mode     = "kinematic"
+    diabatic = true
+
+[[release]]
+comment   = "MESONH profiling release (Indian Ocean)"
+lat       = [-23.1, -22.9]
+lon       = [57.4, 57.6]
+z         = [200.0, 1500.0]
+zkind     = "agl"
+mass      = "1.0kg"
+particles = 200000
+species   = "spec24"
+time      = [2019-03-21T03:00:00.000Z, 2019-03-21T03:00:00.000Z]
+
+[run]
+direction = "forward"
+start     = 2019-03-21T03:00:00.000Z
+stop      = 2019-03-21T05:00:00.000Z
+timestep  = "15min"
+
+[[species]]
+id = "spec24"
+kind = "gas"
+specnum = 24
+dry_deposition = false
+wet_deposition = false

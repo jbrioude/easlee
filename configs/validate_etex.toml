@@ -1,0 +1,35 @@
+# ETEX-1 validation — run with nothing but:
+#     julia --project=easlee scripts/easlee.jl configs/validate_etex.toml
+# task="validation" → release the tracer, sample the stations, report ATMES-II /
+# FLEXPART-11 statistics (per-window + per-station dosage vs FLEXPART 11).
+name = "validate_etex"
+task = "validation"
+
+[run]
+timestep = "5min"
+threads  = 8
+
+[[meteorology]]
+model = "ERA5"
+path  = "/data/ETEX"
+variables = "ERA5_CAPTEX"
+
+[[release]]
+particles = 1000000
+
+[physics]
+  [physics.turbulence]
+  scheme = "thomson"
+  [physics.convection]
+  scheme = "massflux"
+
+[validation]
+obs_dir   = "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/ETEX"
+mode      = "run"          # "run" | "selftest"
+direction = "forward"      # "forward" | "backward"
+release   = "all"
+rundays   = 4
+dxout     = 0.1            # output grid spacing (deg)
+relz      = [8.0, 20.0]    # release layer (m AGL) — FLEXPART-11 used 8–20 m
+ctl       = 10.0
+ifine     = 10

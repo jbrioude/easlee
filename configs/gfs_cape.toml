@@ -1,0 +1,67 @@
+# NCEP GFS (0.25° global GRIB) — DIAGNOSTIC (CAPE-gated) convection test.
+# Same cycle/data as gfs_bench.toml, but scheme="cape" forces the diagnostic
+# convection (GFS has no archived umf/dmf, only CAPE).  Used by scripts/well_mixed.jl.
+name = "gfs_cape"
+
+[[meteorology]]
+available = "auto"
+model     = "GFS"
+path      = "/data/NCEP_GFS/GFS/20260607/12/"
+variables = "GFS"
+
+[output]
+quantity = "concentration"
+interval = "1h"
+average  = "15min"
+sample   = "15min"
+path     = "juliaout/gfs_cape/"
+
+    [output.grid]
+    lon0 = -180.0
+    lat0 = -90.0
+    dx   = 1.0
+    dy   = 1.0
+    nx   = 360
+    ny   = 180
+    heights = [0.0, 100.0]
+
+[physics]
+ctl   = 5.0
+ifine = 4
+    [physics.turbulence]
+    scheme   = "hanna"
+    onthefly = false
+    [physics.convection]
+    scheme   = "cape"
+    cape_min = 100.0
+    cin_max  = 50.0
+    [physics.deposition]
+    dry = false
+    wet = false
+    [physics.vertical]
+    mode     = "kinematic"
+    diabatic = true
+
+[[release]]
+comment   = "GFS diagconv release"
+lat       = [48.5, 49.1]
+lon       = [2.0, 2.6]
+z         = [200.0, 1500.0]
+zkind     = "agl"
+mass      = "1.0kg"
+particles = 200000
+species   = "spec24"
+time      = [2026-06-07T15:00:00.000Z, 2026-06-07T15:00:00.000Z]
+
+[run]
+direction = "forward"
+start     = 2026-06-07T15:00:00.000Z
+stop      = 2026-06-07T18:00:00.000Z
+timestep  = "15min"
+
+[[species]]
+id = "spec24"
+kind = "gas"
+specnum = 24
+dry_deposition = false
+wet_deposition = false

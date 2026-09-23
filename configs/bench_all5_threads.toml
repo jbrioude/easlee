@@ -1,0 +1,69 @@
+# ETEX-1 forward run with TIME-RESOLVED gridded output — self-checkable:
+#     julia --project=easlee scripts/easlee.jl configs/output_etex.toml
+#     julia --project=easlee scripts/check_etex.jl results/etex/grid_output_etex.nc
+#
+# task="transport" writes grid_output_etex.nc with one frame per output.interval
+# (mean over the trailing output.average window — FLEXPART LOUTSTEP/LOUTAVER
+# semantics), so the 3-h frames line up 1:1 with the 3-h ETEX sampling windows
+# (obs start on the hour at 15/18/21/…; run start 12:00 → frames end 15,18,21…).
+# check_etex.jl then samples the frames at the 168 stations and prints the
+# ATMES-II / FLEXPART-11 statistics against meas-t1.txt (pg/m³).
+name = "bench_etex_hh_on"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 1994-10-23T12:00:00
+stop      = 1994-10-24T00:00:00     # 12 h — Hanna-on-GPU validation, not science
+timestep  = "10min"
+threads   = 8
+benchmark = true
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ETEX"
+variables = "ERA5_CAPTEX"
+available = "auto"
+
+[[species]]
+id   = "PMCH"
+kind = "gas"
+
+[[release]]
+species   = "PMCH"
+geometry  = "point"
+lon       = [-2.0083]
+lat       = [48.058]
+z         = [8.0, 20.0]             # FLEXPART-11 ETEX release layer
+zkind     = "agl"
+time      = [1994-10-23T16:00:00, 1994-10-24T03:50:00]   # 11 h 50 (emit-t1.txt)
+particles = 200000
+mass      = "340kg"                 # 340 000 g PMCH (emit-t1.txt — NOT 340 g)
+
+[physics]
+surface_layer_wind = true    # DEFAULT — the switch that used to force the CPU path
+ctl       = 10.0
+ifine     = 10
+  [physics.turbulence]
+  horizontal_hanna = true   # Hanna sigma_u/sigma_v Langevin
+  mesoscale = true          # mesoscale OU fluctuations
+  kh_ft = 50.0              # free-atmosphere K_h [m2/s] (FLEXPART d_trop)
+  scheme = "hanna"
+  onthefly = true          # real Hanna on the fly (option b) — the switch under test
+  [physics.convection]
+  scheme = "massflux"
+
+[output]
+quantity = "concentration"
+path     = "results/bench_all5_threads/"
+interval = "3h"                     # one frame per 3-h ETEX sampling window
+average  = "3h"                     # mean over the whole window (matches the obs)
+sample   = "30min"                  # must be a multiple of run.timestep (10 min)
+[output.grid]
+lon0 = -10.0
+lat0 = 40.0
+nx   = 399
+ny   = 299
+dx   = 0.1
+dy   = 0.1
+heights = [0.0, 100.0]              # single 0–100 m sampling layer (as the validation task)

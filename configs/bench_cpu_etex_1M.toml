@@ -1,0 +1,88 @@
+# CPU baseline for the GPU benchmark - identical to bench_gpu_etex_1M.toml
+#
+# This is the EXACT protocol behind the GPU rows in docs/BENCHMARKS.md, written
+# as a plain transport run so it needs NO observation files: the number you
+# report is the whole-run wall clock, nothing is scored.
+#
+#   GPU :  EASLEE_ADVANCE=ka_gpu julia --project=easlee scripts/easlee.jl configs/bench_gpu_etex_1M.toml
+#   CPU :  EASLEE_ADVANCE=threads julia --project=easlee scripts/easlee.jl configs/bench_cpu_etex_1M.toml
+#
+# scripts/easlee.jl passes [run].threads to the child julia as -t, so the thread
+# count lives in the TOML, not on the command line.  Run each twice and quote
+# the SECOND: the first GPU run pays the CUDA kernel compile (about 3 min here).
+#
+# THREE settings below exist only to keep the two backends on the SAME physics.
+# The KA/GPU kernel does not implement them, and EASLEE will silently fall back
+# to the CPU advance if any of them is on — you would benchmark threads against
+# threads and see a 1.0x "speedup":
+#   physics.surface_layer_wind = false   (Monin-Obukhov surface-layer wind)
+#   physics.turbulence.scheme  = "thomson"  (Hanna on-the-fly is threads-only)
+#   output.kernel              = "uniform"  (adaptive/covariance refuse ka_gpu)
+# Check the log for  "advance backend selected  mode = ka_gpu"  and for the
+# ABSENCE of any "overriding EASLEE_ADVANCE=... with threads" warning.
+name = "bench_cpu_etex_1M"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 1994-10-23T16:00:00
+stop      = 1994-10-25T16:00:00     # 2 days
+timestep  = "15min"
+threads   = 16                      # CPU baseline: all the cores you want to quote
+benchmark = true                    # per-group timing report at run end
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ETEX"            # <-- point this at the met you were sent
+variables = "ERA5_CAPTEX"
+available = "auto"
+max_gap   = "6h"
+
+[[species]]
+id             = "pmch"
+kind           = "gas"
+specnum        = 24
+dry_deposition = false
+wet_deposition = false
+
+[[release]]
+species   = "pmch"
+geometry  = "box"
+lon       = [-2.0083, -2.0083]      # Monterfil, France
+lat       = [48.058, 48.058]
+z         = [0.0, 20.0]
+zkind     = "agl"
+time      = [1994-10-23T16:00:00, 1994-10-24T03:50:00]   # 11 h 50 m
+particles = 1000000
+mass      = "340kg"
+
+[physics]
+ctl                = 5.0
+ifine              = 5
+surface_layer_wind = false          # see note above — threads-only physics
+  [physics.turbulence]
+  scheme = "thomson"
+  [physics.convection]
+  scheme = "off"                    # the published protocol; convection would
+                                    # run on the CPU inside the advance anyway
+  [physics.vertical]
+  mode = "kinematic"
+
+[output]
+quantity    = "concentration"
+per_species = true
+per_release = true
+kernel      = "uniform"             # see note above
+path        = "results/bench_cpu_etex_1M/"
+interval    = "3h"
+average     = "3h"
+sample      = "15min"
+[output.grid]
+crs  = "lonlat"
+lon0 = -10.0
+lat0 = 40.0
+nx   = 160
+ny   = 120
+dx   = 0.25
+dy   = 0.25
+heights = [0.0, 100.0]

@@ -1,0 +1,76 @@
+# EASLEE run configuration
+name = "era5_cape"
+
+[[meteorology]]
+available = "auto"
+model = "ERA5"
+path = "/data/ERA5/20250531/"
+variables = "ERA5_CAPE"
+
+[output]
+aod = false
+average = "15min"
+interval = "1h"
+path = "juliaout/output_era5_conv/"
+per_release = true
+per_species = true
+quantity = "concentration"
+sample = "15min"
+
+    [output.grid]
+    dx = 0.25
+    dy = 0.25
+    heights = [0.0, 500.0, 1000.0, 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 10000.0, 12000.0]
+    lat0 = -55.0
+    lon0 = 60.0
+    nx = 120
+    ny = 100
+
+[physics]
+ctl = 5.0
+ifine = 4
+
+    [physics.convection]
+    cape_min = 100.0
+    cin_max = 50.0
+    scheme = "cape"
+
+    [physics.deposition]
+    dry = false
+    wet = false
+
+    [physics.turbulence]
+    onthefly = false
+    scheme = "hanna"
+    sigw_ft = 0.1
+
+    [physics.vertical]
+    diabatic = true
+    mode = "kinematic"
+    pt_winds = "auto"
+    sigma_r = 0.3
+    sigma_t = 0.1
+
+[[release]]
+comment = "CONVECTION TEST RELEASE"
+lat = [-42.0, -38.5]
+lon = [76.5, 78.0]
+mass = "1.0kg"
+particles = 20000
+species = "spec24"
+time = [2025-05-31T07:00:00.000Z, 2025-05-31T08:00:00.000Z]
+z = [200.0, 1500.0]
+zkind = "agl"
+
+[run]
+direction = "forward"
+start = 2025-05-31T07:00:00.000Z
+stop = 2025-05-31T10:00:00.000Z
+timestep = "15min"
+
+[[species]]
+dry_deposition = false
+id = "spec24"
+kind = "gas"
+specnum = 24
+wet_deposition = false

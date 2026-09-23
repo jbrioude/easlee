@@ -1,0 +1,60 @@
+# CAPTEX release-1 config (PMCH, Dayton OH).  Points at ONE day-dir for a quick
+# met-reader check; the full validation aggregates a multi-day window via
+# validation/validate_captex.jl.  CAPTEX-83 release 1 was 1983-09-18 17-20 UTC;
+# point `path` at your ERA5 day directory for that date (IFS_EA_/IFS_SFC_ files).
+name = "captex_rel1"
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/CAPTEX/19830918"
+variables = "ERA5_CAPTEX"
+available = "auto"
+
+[output]
+quantity = "concentration"
+interval = "3h"
+average  = "3h"
+sample   = "15min"
+path     = "../results/captex_rel1/"
+
+    [output.grid]
+    crs  = "lonlat"
+    lon0 = -100.0
+    lat0 = 30.0
+    dx   = 0.25
+    dy   = 0.25
+    nx   = 160
+    ny   = 100
+    heights = [0.0, 100.0]
+
+[physics]
+ctl   = 5.0
+ifine = 4
+    [physics.turbulence]
+    scheme = "hanna"
+    [physics.convection]
+    scheme = "massflux"
+    [physics.vertical]
+    mode = "kinematic"
+
+[[release]]
+species   = "pmch"
+geometry  = "box"
+lon       = [-84.05, -84.05]
+lat       = [39.80, 39.80]
+z         = [0.0, 20.0]
+zkind     = "agl"
+time      = [1983-09-18T17:00:00, 1983-09-18T20:00:00]
+particles = 10000
+mass      = "208kg"
+
+[run]
+direction = "forward"
+start     = 1983-09-18T08:00:00
+stop      = 1983-09-18T20:00:00
+timestep  = "15min"
+
+[[species]]
+id      = "pmch"
+kind    = "gas"
+specnum = 24

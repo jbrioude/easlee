@@ -1,0 +1,76 @@
+# EASLEE run configuration
+name = "options_gfs"
+
+[[meteorology]]
+available = "auto"
+model = "GFS"
+path = "/data/NCEP_GFS/GFS/20260603/00/"
+variables = "GFS"
+
+[output]
+aod = false
+average = "15min"
+interval = "1h"
+path = "juliaout/output_gfs/"
+per_release = true
+per_species = true
+quantity = "concentration"
+sample = "15min"
+
+    [output.grid]
+    dx = 1.0
+    dy = 1.0
+    heights = [0.0, 500.0, 1000.0, 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 10000.0, 12000.0]
+    lat0 = -90.0
+    lon0 = -180.0
+    nx = 360
+    ny = 180
+
+[physics]
+ctl = 5.0
+ifine = 4
+
+    [physics.convection]
+    cape_min = 100.0
+    cin_max = 50.0
+    scheme = "massflux"
+
+    [physics.deposition]
+    dry = false
+    wet = false
+
+    [physics.turbulence]
+    onthefly = false
+    scheme = "hanna"
+    sigw_ft = 0.1
+
+    [physics.vertical]
+    diabatic = true
+    mode = "kinematic"
+    pt_winds = "auto"
+    sigma_r = 0.3
+    sigma_t = 0.1
+
+[[release]]
+comment = "CONVECTION TEST RELEASE"
+lat = [48.5, 49.1]
+lon = [2.0, 2.6]
+mass = "1.0kg"
+particles = 2000
+species = "spec24"
+time = [2026-06-03T04:00:00.000Z, 2026-06-03T05:00:00.000Z]
+z = [200.0, 1500.0]
+zkind = "agl"
+
+[run]
+direction = "forward"
+start = 2026-06-03T04:00:00.000Z
+stop = 2026-06-03T08:00:00.000Z
+timestep = "15min"
+
+[[species]]
+dry_deposition = false
+id = "spec24"
+kind = "gas"
+specnum = 24
+wet_deposition = false

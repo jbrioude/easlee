@@ -1,0 +1,845 @@
+# EASLEE species database.
+# FLEXPART removal data parsed verbatim; further species carry a molar weight
+# only.  "?" = wet/dry deposition unknown.
+
+[[species]]
+name       = "ACO2"
+molar_mass = 58.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "AEROSOL"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 1400.0, dquer = 2.5e-7, dsigma = 1.25 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "AIRTRACER"
+molar_mass = 29.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ALD2"
+molar_mass = 24.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Ba-140"
+molar_mass = 140.0
+phase      = "aerosol"
+decay      = "1.1017e6s"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "BC"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 2000.0, dquer = 2.0e-8, dsigma = 1.5 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "Br"
+molar_mass = 79.9
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "BrCl"
+molar_mass = 115.36
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "BrO"
+molar_mass = 95.9
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "BrONO2"
+molar_mass = 141.91
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "C10H16"
+molar_mass = 136.23
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 1.2e-11, d = "?", n = 0.0 }
+
+[[species]]
+name       = "C2H4"
+molar_mass = 28.05
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "C2H5OH"
+molar_mass = 46.07
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 3.0e-12, d = "?", n = 0.0 }
+
+[[species]]
+name       = "C2H6"
+molar_mass = 30.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.3, henry = 0.0019, f0 = 0.0 }
+wet        = { below_a = 8.38e-5, below_b = 0.62 }
+oh         = { c = 7.66e-12, d = 1020.0, n = 0.0 }
+
+[[species]]
+name       = "C2O3"
+molar_mass = 75.04
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "C3H6"
+molar_mass = 42.08
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "C3H8"
+molar_mass = 44.1
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 8.7e-12, d = 615.0, n = 0.0 }
+
+[[species]]
+name       = "CH-3-I-131"
+molar_mass = 131.0
+phase      = "gas"
+decay      = "693380.0s"
+dry        = "?"
+wet        = { below_a = 8.0e-7, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "CH2O"
+molar_mass = 30.03
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 5.5e-12, d = "?", n = 0.0 }
+
+[[species]]
+name       = "CH3COCH3"
+molar_mass = 58.08
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 1.8e-12, d = 1.0, n = 0.0 }
+
+[[species]]
+name       = "CH3COCHO"
+molar_mass = 72.06
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "CH3COOH"
+molar_mass = 60.05
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "CH3O2"
+molar_mass = 47.03
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "CH3OH"
+molar_mass = 32.04
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 2.85e-12, d = 345.0, n = 0.0 }
+
+[[species]]
+name       = "CH3OOH"
+molar_mass = 48.04
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "CH4"
+molar_mass = 16.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 0.95, henry = 0.0014, f0 = 0.0 }
+wet        = { below_a = 9.31e-5, below_b = 0.62 }
+oh         = { c = 2.45e-12, d = 1775.0, n = 0.0 }
+
+[[species]]
+name       = "Cl"
+molar_mass = 35.45
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Cl2"
+molar_mass = 70.9
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Cl2O2"
+molar_mass = 102.9
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ClNO2"
+molar_mass = 81.46
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ClO"
+molar_mass = 51.45
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ClONO2"
+molar_mass = 97.45
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "CO"
+molar_mass = 28.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.3, henry = 0.00097, f0 = 0.0 }
+wet        = { below_a = 8.62e-5, below_b = 0.62 }
+oh         = { c = 1.44e-13, d = 0.0, n = 0.0 }
+
+[[species]]
+name       = "Cs-137"
+molar_mass = 137.0
+phase      = "aerosol"
+decay      = "9.4889e8s"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "DMS"
+molar_mass = 62.13
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "DUST-COARSE"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 2500.0, dquer = 1.23e-5, dsigma = 1.22 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "DUST-FINE"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 2500.0, dquer = 2.2e-7, dsigma = 2.24 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "G-HCH"
+molar_mass = 290.83
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 4.04, henry = 714.0, f0 = 0.1 }
+wet        = { below_a = 3.86e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "H2"
+molar_mass = 2.016
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "H2O2"
+molar_mass = 34.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.4, henry = 100000.0, f0 = 1.0 }
+wet        = { below_a = 7.42e-5, below_b = 0.62 }
+oh         = { c = 1.8e-12, d = 0.0, n = 0.0 }
+
+[[species]]
+name       = "HBr"
+molar_mass = 80.91
+phase      = "gas"
+decay      = "stable"
+# Volcanic bromine source gas (TODO #37, docs/MODEL_JUSTIFICATIONS.md §7).
+# HBr is even more soluble than HCl: it dissociates fully in the aqueous/ice
+# phase, so its EFFECTIVE Henry constant is ~1e9 M/atm — order(s) of magnitude
+# above HCl's physical Henry (~2e3) and above the plume-washout effective value
+# used for HCl (2e6, plume_phase.jl).  Consequence for the HT study: in a
+# water-rich (phreatomagmatic) column HBr is scrubbed even more efficiently
+# than HCl — how MUCH survives the plume is the science question the #37 run
+# probes.  Refs: Sander (2015) "Compilation of Henry's law constants", ACP 15,
+# 4399–4981 (H(HBr) intrinsic + acid-dissociation → very large H_eff);
+# von Glasow et al. (2009), "The effects of volcanic eruptions on atmospheric
+# chemistry", Chem. Geol. 263 (volcanic HBr solubility/scavenging).  The
+# below-cloud A/B scale with HNO3 (also solubility-unlimited).  Values are
+# ORDER-OF-MAGNITUDE per §7.
+dry        = { reldiff = 1.9, henry = 1.0e9, f0 = 0.0 }
+wet        = { below_a = 5.82e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "HCHO"
+molar_mass = 30.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.3, henry = 6000.0, f0 = 0.0 }
+wet        = { below_a = 8.38e-5, below_b = 0.62 }
+oh         = { c = 5.5e-12, d = "?", n = 0.0 }
+
+[[species]]
+name       = "HCl"
+molar_mass = 36.46
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HCOOH"
+molar_mass = 46.03
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HNO2"
+molar_mass = 47.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.6, henry = 48.0, f0 = 0.1 }
+wet        = { below_a = 7.04e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "HNO3"
+molar_mass = 63.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.9, henry = 210000.0, f0 = 0.0 }
+wet        = { below_a = 5.82e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "HNO4"
+molar_mass = 79.01
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HO2"
+molar_mass = 33.01
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HO2NO2"
+molar_mass = 79.01
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HOBr"
+molar_mass = 96.91
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HOCl"
+molar_mass = 52.46
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "HYPROPO2"
+molar_mass = 91.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "I-131"
+molar_mass = 131.0
+phase      = "aerosol"
+decay      = "693380.0s"
+dry        = { density = 1900.0, dquer = 5.0e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "I2-131"
+molar_mass = 131.0
+phase      = "gas"
+decay      = "693380.0s"
+dry        = { reldiff = 2.7, henry = 100000.0, f0 = 0.1 }
+wet        = { below_a = 8.0e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "IC3H7O2"
+molar_mass = 75.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ISOP"
+molar_mass = 68.12
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 2.7e-11, d = "?", n = 0.0 }
+
+[[species]]
+name       = "ISPD"
+molar_mass = 70.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Kr-85"
+molar_mass = 85.0
+phase      = "gas"
+decay      = "3.3867e8s"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "MP"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 1234.0, dquer = 1.0e-6, dsigma = 3.3 }
+wet        = { below_a = -9.0e-10, below_b = "?" }
+oh         = { c = -9.0e-10, d = "?", n = 2.0 }
+
+[[species]]
+name       = "MSA"
+molar_mass = 96.11
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "N2O"
+molar_mass = 44.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.6, henry = 0.024, f0 = 0.0 }
+wet        = { below_a = 7.22e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "N2O5"
+molar_mass = 108.01
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "NH2"
+molar_mass = 16.02
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "NH3"
+molar_mass = 17.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.0, henry = 59.0, f0 = 0.0 }
+wet        = { below_a = 9.85e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "NO"
+molar_mass = 30.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.3, henry = 0.002, f0 = 0.0 }
+wet        = { below_a = 8.38e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "NO2"
+molar_mass = 46.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.6, henry = 0.01, f0 = 0.1 }
+wet        = { below_a = 7.12e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "NO3"
+molar_mass = 62.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "NO3-aero"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 2000.0, dquer = 2.0e-7, dsigma = 1.5 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "O"
+molar_mass = 16.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "O3"
+molar_mass = 48.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.6, henry = 0.01, f0 = 1.0 }
+wet        = { below_a = 7.43e-5, below_b = 0.62 }
+oh         = { c = 1.7e-12, d = 940.0, n = 0.0 }
+
+[[species]]
+name       = "OH"
+molar_mass = 17.01
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "OLE"
+molar_mass = 24.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ORGNTR"
+molar_mass = 77.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "PAN"
+molar_mass = 121.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 2.6, henry = 3.6, f0 = 0.1 }
+wet        = { below_a = 5.04e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "PAR"
+molar_mass = 12.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = { c = 8.1e-13, d = 0.0, n = 0.0 }
+
+[[species]]
+name       = "Particulate-Radionuclide"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "PCB28"
+molar_mass = 257.54
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 3.81, henry = 3.02, f0 = 0.1 }
+wet        = { below_a = 3.99e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "ROOH"
+molar_mass = 47.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "ROR"
+molar_mass = 28.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Ru-106"
+molar_mass = 106.0
+phase      = "aerosol"
+decay      = "3.2125e7s"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "RXPAR"
+molar_mass = 12.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "SO2"
+molar_mass = 64.0
+phase      = "gas"
+decay      = "stable"
+dry        = { reldiff = 1.9, henry = 1.3, f0 = 0.0 }
+wet        = { below_a = 6.28e-5, below_b = 0.62 }
+oh         = "?"
+
+[[species]]
+name       = "SO4"
+molar_mass = 96.06
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "SO4-aero"
+molar_mass = "?"
+phase      = "aerosol"
+decay      = "stable"
+dry        = { density = 2000.0, dquer = 2.0e-7, dsigma = 1.5 }
+wet        = { crain = 1.0, csnow = 1.0 }
+oh         = "?"
+
+[[species]]
+name       = "Sr-90"
+molar_mass = 90.0
+phase      = "aerosol"
+decay      = "9.118e8s"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+
+[[species]]
+name       = "Xe-131m"
+molar_mass = 131.0
+phase      = "gas"
+decay      = "1.0233e6s"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Xe-133"
+molar_mass = 133.0
+phase      = "gas"
+decay      = "453390.0s"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Xe-133m"
+molar_mass = 133.0
+phase      = "gas"
+decay      = "189920.0s"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Xe-135"
+molar_mass = 135.0
+phase      = "gas"
+decay      = "32911.0s"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "XO2"
+molar_mass = 44.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "XO2N"
+molar_mass = 44.0
+phase      = "gas"
+decay      = "stable"
+dry        = "?"
+wet        = "?"
+oh         = "?"
+
+[[species]]
+name       = "Y-91"
+molar_mass = 91.0
+phase      = "aerosol"
+decay      = "5.0558e6s"
+dry        = { density = 1900.0, dquer = 6.5e-7, dsigma = 3.0 }
+wet        = { crain = 3.6, csnow = 1.4 }
+oh         = "?"
+

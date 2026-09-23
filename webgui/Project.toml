@@ -1,0 +1,26 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Contour = "d38c429a-6771-53c6-b99e-75d170b6e991"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
+PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+# No Manifest.toml is shipped: `Pkg.instantiate()` resolves the newest versions
+# compatible with the bounds below on YOUR Julia (1.10 or newer), so a stale pin
+# cannot break the install.  The developer tree keeps its Manifest for
+# reproducibility.  Reference versions tested 2026-09-04 (Julia 1.12.6) are
+# listed in HOWTO.md §1.
+[compat]
+julia = "1.10"
+CairoMakie = "0.15"
+Contour = "0.6"
+FileIO = "1"
+HTTP = "1.10, 2"
+JSON3 = "1"
+NetCDF = "0.12"
+PackageCompiler = "2"
+StructArrays = "0.6, 0.7"

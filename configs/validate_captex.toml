@@ -1,0 +1,38 @@
+# CAPTEX-83 validation — run with nothing but:
+#     julia --project=easlee scripts/easlee.jl configs/validate_captex.toml
+# task="validation" → release the PMCH tracer at each CAPTEX release, sample the
+# surface stations, report ATMES-II / FLEXPART-11 statistics (per-window + per-
+# station dosage).  Same physics as validate_etex.toml for a fair comparison.
+# NB: CAPTEX is 1983; the ERA5 under /data/CAPTEX is the SAME day-of-year in 1984
+# (documented in validation/validate_captex.jl) — the harness maps the dates.
+name = "validate_captex"
+task = "validation"
+
+[run]
+timestep = "5min"
+threads  = 6
+
+[[meteorology]]
+model = "ERA5"
+path  = "/data/CAPTEX"
+variables = "ERA5_CAPTEX"
+
+[[release]]
+particles = 1000000
+
+[physics]
+  [physics.turbulence]
+  scheme = "thomson"
+  [physics.convection]
+  scheme = "massflux"
+
+[validation]
+obs_dir   = "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/CAPTEX"
+mode      = "run"          # "run" | "selftest"
+direction = "forward"      # "forward" | "backward"
+release   = "all"
+rundays   = 3
+dxout     = 0.25           # output grid spacing (deg)
+relz      = [0.0, 20.0]    # release layer (m AGL)
+ctl       = 10.0
+ifine     = 10

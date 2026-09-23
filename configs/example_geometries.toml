@@ -1,0 +1,79 @@
+# EASLEE — release geometry examples (point / line / polygon / profile).
+# Each release shares its total particles/mass across the sampled point sources.
+#   julia --threads=8 --project=easlee scripts/easlee.jl run configs/example_geometries.toml
+
+name = "geometry_demo"
+
+[run]
+direction = "forward"
+start = 2025-05-31T07:00:00
+stop  = 2025-05-31T10:00:00
+timestep = "15min"
+
+[[meteorology]]
+model = "ERA5"
+path = "/data/ERA5/20250531/"
+variables = "ERA5_CONV"
+available = "auto"
+
+[[species]]
+id = "tracer"
+kind = "gas"
+
+# a single point, released over a 200–1500 m layer
+[[release]]
+species = "tracer"
+geometry = "point"
+lon = 77.0
+lat = -40.0
+z = ["200m", "1500m"]
+time = [2025-05-31T07:00:00, 2025-05-31T08:00:00]
+particles = 5000
+mass = "1kg"
+
+# a flight/ship track — 100 points along the polyline
+[[release]]
+species = "tracer"
+geometry = "line"
+lon = [76.0, 78.0, 80.0]
+lat = [-40.0, -39.0, -41.0]
+z = ["300m", "1500m"]
+npoints = 100
+time = [2025-05-31T07:00:00, 2025-05-31T08:00:00]
+particles = 10000
+mass = "1kg"
+
+# an area source — 300 points uniformly inside the polygon
+[[release]]
+species = "tracer"
+geometry = "polygon"
+lon = [82.0, 85.0, 85.0, 82.0]
+lat = [-41.0, -41.0, -38.0, -38.0]
+z = ["0m", "500m"]
+npoints = 300
+time = [2025-05-31T07:00:00, 2025-05-31T08:00:00]
+particles = 15000
+mass = "1kg"
+
+# a vertical profile at one location — one release per level
+[[release]]
+species = "tracer"
+geometry = "profile"
+lon = 87.0
+lat = -40.0
+z = [500, 1000, 2000, 4000, 8000]
+time = [2025-05-31T07:00:00, 2025-05-31T08:00:00]
+particles = 5000
+mass = "1kg"
+
+[output]
+quantity = "concentration"
+path = "juliaout/output_geom/"
+[output.grid]
+lon0 = 60.0
+lat0 = -55.0
+nx = 120
+ny = 100
+dx = 0.25
+dy = 0.25
+heights = [0, 500, 1000, 3000, 10000]

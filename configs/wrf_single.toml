@@ -1,0 +1,134 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# wrf_single.toml — WRF only, one domain.
+#
+#   julia --project=easlee scripts/easlee.jl configs/wrf_single.toml
+#
+# EDIT BEFORE RUNNING: [[meteorology]].path, the [run] window, the [[release]]
+# position/time, and the [output.grid] box.  Everything else is a sensible
+# default for a regional dispersion run on a convection-permitting WRF domain.
+#
+# The run window MUST be covered by the wrfout files in `path`; `available =
+# "auto"` scans the directory and builds the time index for you.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "wrf_single"
+task = "transport"                     # transport | validation
+
+[run]
+direction = "forward"                  # forward | backward (source–receptor)
+start     = 2021-08-03T12:00:00
+stop      = 2021-08-04T12:00:00
+timestep  = "15min"                    # model sync step (met interpolation cadence)
+threads   = 8                          # passed as `julia -t` by scripts/easlee.jl
+
+# ── Meteorology ──────────────────────────────────────────────────────────────
+# ONE [[meteorology]] table per nest, FINEST FIRST.  With a single table the run
+# is confined to the WRF domain: a parcel leaving it is terminated.
+# (See wrf_era5_nest.toml / wrf_gfs_nest.toml to keep those parcels alive.)
+[[meteorology]]
+model     = "WRF"
+path      = "/data/WRF/my_run/"        # directory of wrfout_d01_* files
+variables = "WRFv2"                    # listvariables/WRFv2.vars — the proven
+                                       # mapping (U/V/W staggered winds, PH+PHB
+                                       # → geopotential height).  "WRF" is the
+                                       # older AVGFLX/ALT variant; prefer WRFv2.
+available = "auto"                     # scan `path` and index every valid time
+crop      = "off"                      # WRF domains are already regional
+
+# ── Species ──────────────────────────────────────────────────────────────────
+# One passive gas tracer.  `kind = "aerosol"` (with [species.size]) switches on
+# size-resolved settling and deposition — see configs/example_dust.toml.
+[[species]]
+id             = "tracer"
+kind           = "gas"
+molar_mass     = 100.0                 # g/mol
+dry_deposition = false
+wet_deposition = false
+
+# ── Release ──────────────────────────────────────────────────────────────────
+# A box release: lon/lat/z give the two corners, `time` the emission window.
+[[release]]
+species   = "tracer"
+lon       = [-97.9, -97.7]
+lat       = [39.5, 39.7]
+z         = ["100m", "300m"]
+zkind     = "agl"                      # agl | asl
+time      = [2021-08-03T12:00:00, 2021-08-03T13:00:00]
+particles = 200000
+mass      = "1kg"
+
+# ── Physics ──────────────────────────────────────────────────────────────────
+[physics]
+ctl   = 5.0                            # turbulent sub-step = τ_L / ctl
+ifine = 4                              # sub-steps per sync step inside the PBL
+
+    [physics.turbulence]
+    scheme   = "hanna"                 # none | hanna | thomson
+    onthefly = false
+    sigw_ft  = 0.1                     # free-troposphere σ_w [m/s]
+
+    [physics.convection]
+    scheme = "off"                     # WRF at 1–4 km resolves convection;
+                                       # "massflux" needs archived updraught
+                                       # mass fluxes, which wrfout does not carry
+
+    [physics.deposition]
+    dry = false
+    wet = false                        # wrfout carries no 3-D precipitation flux
+                                       # in the WRFv2 mapping
+
+    [physics.vertical]
+    mode     = "kinematic"             # kinematic | hybrid | isentropic
+    diabatic = true
+
+    # ── Inter-trajectory mixing ───────────────────────────────────────────────
+    # Fickian tracer exchange between co-located parcels of the SAME species,
+    # plus coverage-based entrainment of ambient air at the plume edge.  This is
+    # the alternative to a horizontal random walk: ONE K either moves parcels or
+    # exchanges mass between them, never both — so keep
+    # [physics.turbulence].kh_ft = 0 whenever this is on.
+    # See the [physics.mixing] section of docs/CONFIG.md.
+    [physics.mixing]
+    scheme        = "pairwise"         # off | pairwise
+    K_h           = 1000.0             # horizontal diffusivity of the exchange [m²/s]
+    sigma0_h      = ""                 # kernel half-width; empty = met grid spacing
+    sigma_v       = ""                 # vertical pair half-width; empty = turbulent yl
+    background    = true               # edge entrainment toward ambient air
+    nsig          = 2.0                # pair-search radius in σ₀ units
+    max_neighbors = 30
+    every         = 1                  # apply every N sync steps
+
+# ── Output ───────────────────────────────────────────────────────────────────
+[output]
+quantity    = "both"                   # concentration | mixing_ratio | both
+path        = "juliaout/wrf_single/"
+interval    = "1h"                     # one grid frame per hour
+average     = "1h"                     # averaged over the trailing hour
+sample      = "15min"                  # sampled every 15 min inside that hour
+per_release = true
+per_species = true
+group       = "species"
+
+# Gridding estimator.  "adaptive" is the kNN kernel: each parcel deposits a
+# Gaussian whose bandwidth is the LOCAL inter-trajectory spacing (k nearest
+# neighbours), so the effective resolution follows the trajectory density
+# instead of a fixed cell size or FLEXPART's 3-hour age rule.
+# "uniform" = FLEXPART's 4-cell bilinear (the comparison reference).
+kernel          = "adaptive"           # none | uniform | adaptive | covariance
+resolution      = true                 # also write R(x), the mass-weighted
+                                       # kernel width per cell — read it to see
+                                       # where the run is actually resolved
+bandwidth_floor = "dispersion"         # honest footprint for just-released parcels
+floor_sigma_v   = 0.5
+floor_tl        = "5min"
+
+    # The output grid is ALWAYS geographic, whatever projection the meteorology
+    # uses — the Lambert WRF grid is mapped to lon/lat at deposit time.
+    [output.grid]
+    lon0    = -101.0
+    lat0    = 37.0
+    nx      = 160
+    ny      = 120
+    dx      = 0.05
+    dy      = 0.05
+    heights = [0.0, 100.0, 300.0, 600.0, 1000.0, 2000.0, 4000.0, 8000.0]

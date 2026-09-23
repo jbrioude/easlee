@@ -1,0 +1,127 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# wrf_era5_nest.toml — WRF as the INNER nest, ERA5 as the outer/global driver.
+#
+#   julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
+#
+# HOW NESTING WORKS.  You list one [[meteorology]] table per nest, FINEST FIRST.
+#   • At release, each parcel is assigned to the finest nest that contains it.
+#   • When a parcel leaves its nest, it is handed to the next coarser nest that
+#     contains it (same lat/lon, level index clamped to the coarser ladder) and
+#     keeps going.  Only a parcel outside ALL nests is terminated.
+#   • Nothing is transferred back: a parcel that re-enters the WRF domain stays
+#     on ERA5.  So put the fine domain first and size it around the source.
+#
+# The two archives need NOT be on the same grid, projection or level ladder —
+# WRF is Lambert with terrain-following η levels, ERA5 is regular lat/lon on
+# 137 hybrid levels.  They DO need to cover the same run window.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "wrf_era5_nest"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 2021-08-03T12:00:00
+stop      = 2021-08-06T12:00:00        # long enough for parcels to leave WRF
+timestep  = "15min"
+threads   = 8
+
+# ── Nest 1 — WRF (finest) ────────────────────────────────────────────────────
+[[meteorology]]
+model     = "WRF"
+path      = "/data/WRF/my_run/"        # wrfout_d01_* (or d02_* for the inner domain)
+variables = "WRFv2"
+available = "auto"
+crop      = "off"
+
+# ── Nest 2 — ERA5 model levels (outer) ───────────────────────────────────────
+# ERA5 GRIB on 137 hybrid levels, one valid time per file.  Use "ERA5_CONV" when
+# the archive has the CLD companions (cloud fraction + draught mass fluxes +
+# 3-D precipitation flux) — that is what enables mass-flux convection and wet
+# deposition below.  Plain "ERA5" if you only have the MET files.
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5/2021/"
+variables = "ERA5_CONV"                # or "ERA5"
+available = "auto"
+crop      = "off"                      # "auto" only crops domain-fill runs
+
+[[species]]
+id             = "tracer"
+kind           = "gas"
+molar_mass     = 100.0
+dry_deposition = false
+wet_deposition = false
+
+[[release]]
+species   = "tracer"
+lon       = [-97.9, -97.7]
+lat       = [39.5, 39.7]
+z         = ["100m", "300m"]
+zkind     = "agl"
+time      = [2021-08-03T12:00:00, 2021-08-03T13:00:00]
+particles = 200000
+mass      = "1kg"
+
+[physics]
+ctl   = 5.0
+ifine = 4
+
+    [physics.turbulence]
+    scheme   = "hanna"
+    onthefly = false
+    sigw_ft  = 0.1
+    kh_ft    = 0.0                     # MUST stay 0 while [physics.mixing] is on
+                                       # (one K moves parcels OR exchanges mass)
+
+    [physics.convection]
+    scheme = "massflux"                # needs the ERA5 CLD companions; parcels
+                                       # inside the WRF nest are unaffected
+                                       # (wrfout carries no mass fluxes)
+
+    [physics.deposition]
+    dry = false
+    wet = true                         # 3-D precipitation flux from ERA5_CONV
+
+    [physics.vertical]
+    mode     = "kinematic"
+    diabatic = true
+
+    [physics.mixing]
+    scheme        = "pairwise"
+    K_h           = 1000.0
+    sigma0_h      = ""                 # empty = the grid spacing of nest 1
+    sigma_v       = ""
+    background    = true
+    nsig          = 2.0
+    max_neighbors = 30
+    every         = 1
+
+[output]
+quantity    = "both"
+path        = "juliaout/wrf_era5_nest/"
+interval    = "1h"
+average     = "1h"
+sample      = "15min"
+per_release = true
+per_species = true
+group       = "species"
+
+kernel          = "adaptive"           # kNN-spacing bandwidth — the right
+                                       # estimator for a plume that spans a
+                                       # 4 km nest and a 30 km outer domain
+resolution      = true
+bandwidth_floor = "dispersion"
+floor_sigma_v   = 0.5
+floor_tl        = "5min"
+
+    # One geographic grid for BOTH nests — size it around the far-field plume,
+    # not around the WRF domain.
+    [output.grid]
+    lon0    = -110.0
+    lat0    = 30.0
+    nx      = 200
+    ny      = 140
+    dx      = 0.25
+    dy      = 0.25
+    heights = [0.0, 100.0, 300.0, 600.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0]

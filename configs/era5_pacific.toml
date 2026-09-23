@@ -1,0 +1,53 @@
+# ERA5 Pacific domain, transport only (no chemistry).  Used by the ERA5
+# diagnostics that place parcels manually (test_era5_io, profile_advance,
+# diag_domainfill).  Legacy-free: available = "auto".
+name = "era5_pacific"
+
+[run]
+direction = "forward"
+# ERA5 20250520 met starts at 07:00 UTC → begin at 09:00 (see cams_pacific notes).
+start    = 2025-05-20T09:00:00
+stop     = 2025-05-20T21:00:00
+timestep = "15min"
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5/20250520/"
+variables = "ERA5_CONV"
+available = "auto"
+
+[[species]]
+id   = "AIR"
+kind = "gas"
+
+[[release]]
+species   = "AIR"
+lon       = [150.0, 230.0]
+lat       = [0.0, 50.0]
+z         = [0.0, 10000.0]
+zkind     = "agl"
+time      = [2025-05-20T09:00:00, 2025-05-20T09:15:00]
+particles = 100000
+mass      = "1kg"
+
+[physics]
+ctl   = 2.0
+ifine = 4
+[physics.turbulence]
+scheme = "none"
+[physics.convection]
+scheme = "off"
+
+[output]
+quantity = "concentration"
+path     = "juliaout/output_era5_pacific/"
+interval = "3h"
+sample   = "15min"
+[output.grid]
+lon0 = 150.0
+lat0 = 0.0
+nx   = 200
+ny   = 125
+dx   = 0.4
+dy   = 0.4
+heights = [0.0, 1000.0, 2000.0, 4000.0, 6000.0, 8000.0, 10000.0]

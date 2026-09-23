@@ -1,0 +1,69 @@
+# Sea-spray aerosol from the OSSA source function (Ovadnevaite et al. 2014)
+# over a Pacific box, with the mean/transient gust decomposition ON:
+# the run-end "sea spray (OSSA) budget" line reports the mean-field and
+# gust-integrated emissions separately (their ratio = the transient
+# enhancement — largest below ~10-15 m/s mean wind).
+#
+#     julia --project=easlee scripts/easlee.jl configs/example_seaspray.toml
+name = "example_seaspray"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 2025-01-01T12:00:00
+stop      = 2025-01-02T00:00:00
+timestep  = "15min"
+threads   = 6
+benchmark = true
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5_full/"
+variables = "ERA5_FULL"               # _SFC_ companions carry 2t/2d/blh/zust/z/lsm
+                                      # (no 10u/10v — U10 is rebuilt from u*=zust)
+available = "auto"
+crop      = [150.0, 220.0, -45.0, -5.0]
+
+[[species]]
+id   = "ss"
+kind = "aerosol"
+aerosol_type = "seasalt"
+density = 2017.0
+wet_deposition = true
+[species.size]
+distribution = "lognormal"
+dg = "0.2um"
+sigma_g = 2.0
+nbins = 8
+
+[[release]]
+species   = "ss"
+kind      = "seaspray"
+lon = [160.0, 200.0]
+lat = [-40.0, -10.0]
+z   = [0.0, 100.0]
+time = [2025-01-01T12:00:00, 2025-01-02T00:00:00]
+particles = 40000                     # parcel-pool CAP for the spawned spray
+mass_per_parcel = "10t"               # ~1.5e8 kg over the box·12 h → ~15k parcels
+  [release.seaspray]
+  gust_sigma = 1.5
+
+[physics]
+turbulence = "hanna"
+[physics.deposition]
+wet = true
+
+[output]
+quantity = "concentration"
+path     = "juliaout/output_seaspray/"
+interval = "1h"
+average = "1h"
+sample = "15min"
+[output.grid]
+lon0 = 150.0
+lat0 = -45.0
+nx = 280
+ny = 160
+dx = 0.25
+dy = 0.25
+heights = [0, 100, 500, 1000, 2000, 4000]

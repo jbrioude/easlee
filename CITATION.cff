@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use EASLEE in your research, please cite it as below."
+title: "EASLEE: an atmospheric Lagrangian particle dispersion model in Julia"
+type: software
+authors:
+  - family-names: Brioude
+    given-names: Jerome
+    email: jerome.brioude@univ-reunion.fr
+version: 1.1.0
+date-released: 2026-09-13
+license: GPL-3.0-or-later
+abstract: >-
+  EASLEE is an atmospheric Lagrangian particle dispersion model (LPDM) written
+  in Julia, in the lineage of FLEXPART: forward/backward transport driven by
+  ERA5/MERRA-2/GFS/AROME/Meso-NH/WRF archives, Hanna and TKE-based turbulence,
+  mass-flux and CAPE convection, dry/wet deposition and radioactive decay,
+  inter-trajectory mixing, aerosol optics, plume-rise and volcanic
+  eruption-column physics, and adaptive/covariance output kernels — all driven
+  by a single TOML configuration through one engine.  This is the transport
+  distribution; the reactive-chemistry module is distributed separately.

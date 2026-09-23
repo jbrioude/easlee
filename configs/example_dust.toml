@@ -1,0 +1,62 @@
+# EASLEE — example run: dust aerosol, ERA5, convection + wet deposition + AOD.
+# No AVAILABLE file needed: `available = "auto"` scans the met directory.
+#   julia --threads=8 --project=easlee scripts/easlee.jl run configs/example_dust.toml
+
+name = "dust_southern_ocean"
+
+[run]
+direction = "forward"
+start     = 2025-05-31T07:00:00
+stop      = 2025-05-31T10:00:00
+timestep  = "15min"
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5/20250531/"
+variables = "ERA5_CONV"          # → listvariables/ERA5_CONV.vars
+available = "auto"               # scan the directory (header valid time)
+
+[[species]]
+id           = "dust"
+kind         = "aerosol"
+aerosol_type = "dust"            # κ + refractive index defaults
+density      = 2600.0            # kg/m3
+settling     = true
+[species.size]
+distribution = "lognormal"
+dg           = "2.0um"
+sigma_g      = 2.0
+nbins        = 8
+
+[[release]]
+species   = "dust"
+lon       = [76.5, 78.0]
+lat       = [-42.0, -38.5]
+z         = ["200m", "1500m"]
+time      = [2025-05-31T07:00:00, 2025-05-31T08:00:00]
+particles = 20000
+mass      = "1kg"
+
+[physics]
+turbulence = "hanna"
+[physics.convection]
+scheme = "massflux"              # archived IFS mass fluxes (CLD companion)
+[physics.deposition]
+wet = true                       # size-dependent for aerosol species
+
+[output]
+quantity    = "both"             # concentration + mixing ratio
+per_release = true
+per_species = true
+aod         = true               # column AOD(550nm)
+path        = "juliaout/output_dust/"
+interval    = "1h"
+sample      = "15min"
+[output.grid]
+lon0 = 60.0
+lat0 = -55.0
+nx = 120
+ny = 100
+dx = 0.25
+dy = 0.25
+heights = [0, 500, 1000, 2000, 3000, 4000, 6000, 8000, 10000, 12000]

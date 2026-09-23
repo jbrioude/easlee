@@ -1,0 +1,258 @@
+# EASLEE transport distribution — changes
+
+## 2026-09-23 — GPU/KA advance: the last threads-only switches ported, two kernel bugs fixed, switches passed as types
+
+Ported from the developer tree (commits a0d6026, 7fd48d0, 4345524, 2bdf8f8, 77e0d3f,
+8a12d39, 0e46fe6; chemistry left out).  Files: `physics/advance_ka.jl`,
+`physics/advance_ka_gpu.jl`, `physics/turbulence_4d.jl`, `physics/turbulence_hanna.jl`,
+`physics/advance.jl`, `met/interp.jl`, `io/vmix_namelist.jl`, `core/operators.jl`,
+`core/config.jl`, `types/config.jl`, `config/{runspec,schema,toml_io}.jl`, `build_run.jl`.
+
+- **`[physics.turbulence] horizontal_hanna`** (new): Hanna (1982) horizontal Langevin
+  (σ_u, σ_v, T_L from u*, h, L, w*) on Hanna-fill drivers, the in-PBL horizontal term
+  FLEXPART uses; `hanna_h`/`hanna_wstar` in `turbulence_hanna.jl`; surface parameters
+  sampled once per sync step at the entry position on both advances.
+- **Nothing is threads-only any more.** On-the-fly Hanna (`turbulence_hanna_4d`, the
+  device twin of `turbulence_hanna_v1`), `mesoscale`, `kh_ft`, `horizontal_tke`,
+  `horizontal_hanna` and `[physics] surface_layer_wind` all run on the KA/GPU path; the
+  mesoscale OU state joins the resident device set (12 → 15 arrays), the surface
+  arrays (u*, h, L) are uploaded when any of them is armed.
+- **No silent downgrade.** When `EASLEE_ADVANCE=ka_gpu|ka_cpu` is set explicitly and
+  the backend cannot be honoured (CUDA not functional, 2-D/1-D wind mask), the run now
+  ERRORS instead of running the threads advance under a GPU label (`_ADVANCE_REQUESTED`,
+  `advance_dispatch!`).  The auto default (no `EASLEE_ADVANCE`) still falls back.  The
+  two `build_run` refusals for horizontal_tke/horizontal_hanna on KA are retired.
+- **Two KA kernel bugs fixed** (found by the well-mixed criterion, `test/test_wellmixed_*_4d.jl`):
+  the top model layer was unreachable in `interpolation4D_irregzsingle` (loop to Nkmax,
+  fallback Nkmax − 1e-3), and the KA Thomson drift term was not aligned with the CPU's
+  (wshare·∂tke/∂z/σ_w with the SIGW_FLOOR guard).
+- **Physics switches reach the kernel as `Val{Bool}`** (types, not values): the GPU
+  compiler specialises on argument types, so runtime Bools compiled every branch into
+  one kernel and cost +44 % on the advance with all switches OFF (ETEX 1 M: 116 → 167 s).
+  Back to 118 s.  Any new kernel switch must go in as a type.
+- Validation record: `docs/BENCHMARKS.md` §3b (all five switches ON, threads vs ka_gpu:
+  2.3e-3 in mass, correlation 0.99993; per-switch pairs; well-mixed PBL and Thomson);
+  benchmark matrix for the paper in §0d and `docs/PAPER_TABLES_2026-09-23.md`
+  (`scripts/bench_matrix.sh`, `scripts/bench_matrix_table.py`, `scripts/ka_compare_grids.py`,
+  `configs/bench_*`).  Tests added: `test_ka_switches_unit.jl`, `test_hanna_gpu_4d.jl`,
+  `test_wellmixed_pbl_4d.jl`, `test_wellmixed_thomson_4d.jl`.
+- `test/test_ka_parity.jl` updated to the new dispatch semantics (mesoscale and on-the-fly
+  Hanna are supported on KA; an explicit `EASLEE_ADVANCE` with a 2-D wind mask errors; the
+  auto default warns once): 33/33.  Note for this distribution: `NestRunConfig` has no
+  `vmix_kz` field here (the developer tree's Kz port added one), so positional
+  constructions of it differ between the trees by that argument.
+- Integration check of the port on zion (2026-09-23): `EASLEE_ADVANCE=ka_gpu PREFETCH=1`
+  on `configs/bench_gpu_etex_1M.toml` — `mode = :ka_gpu`, no override, advection 120.9 s,
+  met read 19.6 s, TOTAL(run) 171.0 s (developer tree the same morning: 168 s).  Tests in
+  this tree: `test_ka_switches_unit.jl` 5/5, `test_hanna_gpu_4d.jl` 12/12,
+  `test_ka_parity.jl` 33/33, `test_wellmixed_pbl.jl` all pass.
+- Not ported (chemistry, outside this distribution): sulfate dilution, HNO3-on-ice
+  scavenging and isotherm, the coarse-ice sweep accumulator (`state.csweep`), NAT ceiling.
+
+## 2026-09-13 — v1.1 (transport and met-reading fixes from the developer tree)
+
+Version 1.0.0 → **1.1.0** (`CITATION.cff`).  Everything below is transport,
+met reading or output; the developer tree's chemistry changes of the same
+period are not part of this distribution.  Each hunk in the source carries a
+`v1.1` comment naming the change.
+
+Documentation and met-reader checks (2026-09-19)
+
+- **`docs/MIXING_SCHEMES.md` removed.**  It framed `physics/mixing.jl` as the
+  "old scheme", a port of a Fortran EASLEE, set against a "new scheme" on a TODO
+  list — a distinction that does not exist in this distribution and was
+  misleading.  The part worth keeping, the derivation of the pairwise exchange
+  (cell list, Gaussian pair weights, second-moment renormalisation to `K_h`,
+  conservative exchange, θ-limiter, coverage-based background relaxation), is
+  now in the `[physics.mixing]` section of `docs/CONFIG.md`, where the
+  configuration it describes already lived.  The routines themselves are
+  unchanged.
+- **Dangling references fixed.**  Four docs pointed at `test/<file>.jl` for
+  tests that ship in `validation/`; three pointed at documents that are not
+  part of this distribution.
+- **`docs/ETEX_RESULTS.md` and `docs/CAPTEX_RESULTS.md` now carry a dated
+  warning.**  Their tables were measured before the 2026-09-04 surface-flux
+  correction (`sshf`, `ewss`, `nsss`), which feeds u*, the Obukhov length and
+  therefore the PBL, so they do not describe the physics this version produces.
+  The current-code measurements available are quoted alongside, with their
+  configurations stated; a like-for-like re-run of the published ETEX config is
+  still to be done.
+- **FLEXPART, WRF and AROME are no longer called "legacy".**  `TIMESTEPS.md`
+  carried the `LSYNCTIME`/`LOUTSTEP`/`LOUTAVER`/`LOUTSAMPLE`/`CTL`/`IFINE` table
+  under a "Mapping (legacy → EASLEE TOML)" heading with a "Legacy" column; it is
+  now a section of its own, "Coming from FLEXPART", framed as a cross-reference
+  from FLEXPART's `COMMAND` to the TOML key that plays the same role.
+  `OUTPUT_GRID.md` called FLEXPART's `OUTGRID` legacy, and `MET_DATA.md` and
+  `ARCHITECTURE.md` called the WRF and AROME reader paths legacy when the point
+  was only that v1.1 did not change them.  `ARCHITECTURE.md`'s "Legacy I/O"
+  layer is EASLEE's own untyped Dict-based code, but it sat next to "reads
+  FLEXPART-style input files" where it read as a judgement on FLEXPART; it is
+  now "Untyped I/O", which is more descriptive anyway.  Where the word genuinely
+  meant EASLEE's own earlier behaviour it now says so.
+- **Sanity check on the converted vertical velocity** (`_levdot_sanity!` in
+  `easlee/src/io/initialize.jl`).  The existing detector judges the magnitude of
+  the ARCHIVED eta-dot; this one judges the RESULT, so an archive in neither
+  convention — or a convention forced wrongly through `#info etadot_units` —
+  is caught even when the input-side test cannot see it.  Runs once per met
+  source, warns when max|w| over the interior levels leaves 1e-3…50 m/s.  On
+  the ETEX files the correct reading gives max|w| = 0.457 m/s and the forced
+  wrong one 5.06e-6 m/s, a factor 9e4.  See `docs/ETADOT_UNITS.md`;
+  `test/test_etadot_units.jl` is now 20 checks.
+
+Installation
+
+- **No `Manifest.toml` is shipped** (engine or GUI), as since 2026-09-05: a
+  manifest resolved on Julia 1.12 fails to precompile on 1.10, which is the
+  install error reported from the HPC.  `Pkg.instantiate()` resolves against the
+  `[compat]` bounds in the two `Project.toml` files instead.  Julia RECREATES a
+  manifest as soon as anyone runs in the tree, so `make_tarball.sh` excludes
+  them at build time and fails loudly if one slips in — deleting them once is
+  not enough.  Build the distribution with `sh easlee_v1_1_shared/make_tarball.sh`.
+
+Met reading and nested domains
+
+- **AROME: `pblh` was identically zero for every run** (`io/initialize.jl`,
+  `metaromefieldcalculation!`).  AROME archives neither `ustar` nor `pblh`
+  (`listvariables/AROME.vars` leaves both blank) and the native-TKE path never
+  ran the derivation the Hanna-fill paths do, so the field stayed at its
+  allocation zeros: the `[tracers]` PBL-contact tag never fired (it floors at
+  50 m), the trajectory CSV's `pblh` column was 0, and the `kh_ft`
+  free-troposphere gate treated everything above 50 m as free troposphere.
+  Now derived exactly as the other native-e driver (MesoNH) does it — log-law
+  `ustar`, bulk-Richardson `ol`, TKE-threshold `pblh`.  The 3-D `tke` is
+  untouched.  A Thomson run is unchanged by this and only gains the diagnostic.
+- **Per-nest vertical-mixing closure** (`types/config.jl`, `core/config.jl`,
+  `advance.jl`, `runtime.jl`).  Nests may legitimately declare different
+  closures — AROME native `e` inside ERA5 Hanna fill (`tke = 0.5·σ_w²`) — and
+  applying one nest's CBR constants to the other's field misread the archived
+  `tke` by a factor `2·r_w`.  Each nest now carries its own
+  (`native_e, r_w, c_k`) from its own variables namelist; the former "nests
+  declare conflicting closures" error is an informational message.  A parcel
+  transferred between nests has its stored turbulent velocities zeroed (they
+  were drawn under the other nest's σ; the OU process re-establishes the right
+  variance within one τ_L).
+
+Transport
+
+- **`[physics.turbulence] horizontal_tke`** (`turbulence.jl` `tke_partition_h`,
+  `advance.jl`): TKE-driven horizontal Langevin velocity on native-e drivers.
+  The Langevin route dispersed parcels vertically only (`uout = vout = 0`), so
+  with `kh_ft = 0` and `[physics.mixing]` off there was **no horizontal
+  dispersion at all**: on an AROME marine back-trajectory the cross-wind σ of a
+  5000-parcel cloud went 0.19 → 0.15 → 0.15 → 0.18 km at ages 0/1/3/6 h.
+  σ_u² = σ_v² = 2·e·(1−r_w)/2 from the same archived `e` as the vertical step,
+  τ_Lh = K_h/σ_u²; refused on Hanna-fill met, with `[physics.mixing]` armed,
+  without a turbulence scheme, or on the KA/GPU advance.  Off by default;
+  off reproduces the previous output.  See CONFIG.md.
+- `turbulence_hanna_v1`: guard against a rare non-finite / runaway normalised
+  velocity (|w'| > 20 σ), reset to a fresh draw, counted in
+  `_HANNA_WP_RESETS`, warned once.
+- Release-slot allocation: the free-slot scan restarted from 1 for every
+  release box every step (O(boxes × used slots)); a monotone cursor now
+  resumes where the last scan stopped (share review B2c, previously applied
+  in the developer tree only).  The per-step release count no longer
+  materialises a BitVector over the whole run.
+- Plume rise / plume phase: the Bolton liquid saturation fit (valid −35…+35 °C,
+  1.7–1.9× e_si at 200–215 K) is replaced by Murphy & Koop over ice below 235 K
+  and over liquid above (`ice_physics.jl` `esat_mk`, `esat_liq_mk`); the
+  plume-phase ice saturation now calls the single `esat_ice` definition.
+
+Output
+
+- **NetCDF georeference of a projected output grid** (`types/output.jl`,
+  `io/output.jl`, `io/initialize.jl`).  `initnetcdf` wrote the grid axes as
+  `lon0 + dlon·(i−1)` under hard-coded `degrees_east` / `degrees_north`.  On
+  `[output.grid] crs = "native"` over a Lambert nest those numbers are
+  **projection metres**, so every external reader placed the grid at 0°N 0°E
+  with 1300° spacing.  Such a grid is now written as CF `x`/`y` in metres plus
+  2-D auxiliary `longitude`/`latitude` sampled from the nest's own LON/LAT;
+  data variables carry `coordinates = "longitude latitude"`.  A lon/lat output
+  grid is unchanged bit for bit.
+- **`[output.trajectory] format = "demovor"`**: the DEMOVOR/AROME column
+  set (no header, `%.5g`) plus an eighth `pblh_m` column.  Rows are sampled on
+  the parcel's own nest: the writer used to read `ctx.nests[1]` for every
+  parcel, so a parcel that had left an inner domain was placed with the inner
+  grid's projection — silently, since the bogus indices usually still fell
+  inside its bounds.
+
+Tests
+
+- `test/test_v11_transport_ports.jl` (new, synthetic data only): the
+  horizontal-TKE partition and OU stationary variance, the Murphy–Koop laws,
+  the free-slot cursor, config keys through the RunSpec and a TOML round
+  trip, the NestRunConfig fields and CPU-only switch, the trajectory header by
+  format.
+- Two test-side positional `NestRunConfig(...)` constructors brought to the
+  full field order (`test/test_ka_parity.jl`; `validation/test_polar_stereo.jl`,
+  which was a 12-argument form predating `kh_ft`/`mo_surface` and was already
+  broken before this release).
+
+Validation (2026-09-13, zion, Julia 1.12.6)
+
+- Test suite: **39/39** (`test/runtests.jl`, 8 threads).
+- ETEX regression: `configs/output_etex.toml` (400 k parcels, 72 h, 16 threads)
+  scored with `validation/check_etex.jl` reproduces the documented baseline
+  **RANK 2.75** to the last digit (R 0.660 vs 0.651, FMS 55.8 vs 57.2 %, within
+  run-to-run scatter); no Hanna-guard warning fired.  BENCHMARKS.md §0c.
+- End-to-end trajectory smoke on real ERA5 (ETEX met, 6 h, 20 k parcels,
+  `format = "demovor"`): 535 rows, every row 8 columns, `pblh_m` non-zero
+  (mean 745 m, max 895 m), TKE sampled at the parcel.
+- Not exercised here (needs an AROME/MesoNH archive): `horizontal_tke` on live
+  met, the AROME `pblh` derivation on live met, and a Lambert `crs = "native"`
+  NetCDF.  Their logic is the same code as the developer tree, where they were
+  run on the TROPIVOC AROME 1.3 km batch; only their unit-level contracts are
+  pinned in `test_v11_transport_ports.jl`.
+
+## 2026-09-05
+
+Installation
+
+- No `Manifest.toml` is shipped any more (engine and GUI). `Pkg.instantiate()`
+  resolves against the `[compat]` bounds now present in both `Project.toml`
+  files, on Julia 1.10 or newer. Tested from a clean depot on Julia 1.12.6 and
+  1.10.12. (A manifest resolved on 1.12 failed to precompile on 1.10, and the
+  GUI manifest pinned a networking library whose precompile self-test used a
+  certificate that expired on 2026-08-06.) See HOWTO §1.
+- Every run prints one startup line saying whether the GPU is actually used
+  (`GPU backend enabled: <device>; CUDA initialized`) or why not. Being inside
+  a GPU allocation is not using it; the line settles the question. HOWTO §1.3.
+- Unknown or misspelled configuration keys are now an error listing the key and
+  the nearest known one (`strict_keys = false` downgrades it to a warning).
+- `test/runtests.jl` passes the thread count to each test; 38 tests.
+
+Physics and numerics (transport results change only where noted)
+
+- `EASLEE_ADVANCE=ka_cpu|ka_gpu`: the vertical mean wind was applied
+  (ctl+1)/2 times per step, and the default `hanna` turbulence scheme ran as no
+  turbulence. Both fixed; the KA path now reproduces the threads path (8-h
+  CAPTEX release-1 check: mean plume height 511 m vs 510 m, layer mass
+  fractions within 0.003; before the fix 42 % of the mass sat below 100 m and
+  a tail reached 4 km). CPU-only switches (`surface_layer_wind`,
+  `turbulence.mesoscale`, `kh_ft`, on-the-fly Hanna) now force the threads
+  advance with a warning instead of being dropped silently. Met fields are
+  uploaded to the GPU only when they change (was: every step).
+- Threads advance: the sub-step loop is exact (it ran ctl+1 sub-steps for
+  ~20 % of (Δt, ctl) pairs; the shipped configs were not among them); the
+  staggered vertical read at the model top no longer touches level nz+1;
+  `physics.ctl` must be an integer; the Monin-Obukhov correction is skipped
+  above the lowest level (same result, less work).
+- Aerosols: `dry_deposition` / `wet_deposition` and `[physics.deposition]` are
+  honoured for aerosol species (deposition used to run regardless); gas wet
+  deposition now also runs in mixed gas + aerosol runs (was silently off); two
+  aerosol species with different size parameters are refused (one bin set
+  was shared silently). `species.molar_mass` and `species.refractive_index`
+  now reach the physics. `[species.settling]` is the documented table name
+  (`[species.fall]` still accepted).
+- Met reader: surface-flux units (sshf, ewss/nsss) are detected from the field
+  magnitude instead of assuming hourly accumulations (affects only the `ERA5`
+  name map, no shipped config); end-of-archive holds the last frame on the
+  prefetch path (was a crash); a run start outside the archive names the
+  dates; the WRF time-slice lookup no longer loops over a date-string length;
+  latitude flip follows `jScansPositively`; incomplete GRIB files warn per
+  variable; GRIB decode no longer makes two Float64 copies per message.
+- Output: culled domain-fill parcels are not deposited one extra step.
+- Example config `captex_rel1.toml` now points at the 1983 dates (CAPTEX-83).
+
+Every item above was re-read in the source and, where numeric, reproduced
+with a small script before being fixed.
+in the developer tree.

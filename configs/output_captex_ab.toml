@@ -1,0 +1,69 @@
+# CAPTEX release-1 forward run with TIME-RESOLVED gridded output + gridless
+# receptors — the A+B benchmark twin of output_etex_ab.toml:
+#     julia --project=easlee scripts/easlee.jl configs/output_captex_ab.toml
+#     julia --project=easlee validation/check_captex.jl
+#
+# Release 1 (emit-t1.txt): Dayton OH, 1983-09-18 17:00 UTC + 3 h, 208 kg PMCH.
+# 3-h frames align with the DATEM 3/6-h sampling windows; the [output.receptors]
+# block additionally dumps the trajectory mass directly at the 84 station
+# locations (adaptive-KDE sample-point estimator — no output grid involved).
+name = "output_captex_ab"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 1983-09-18T15:00:00
+stop      = 1983-09-21T06:00:00     # frames end on synoptic hours (obs windows end 00/06/12/18 + 21/00/03)
+timestep  = "10min"
+threads   = 6
+benchmark = true
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/CAPTEX"          # per-day dirs; the scanner walks subdirs
+variables = "ERA5_CAPTEX"
+available = "auto"
+
+[[species]]
+id   = "PMCH"
+kind = "gas"
+
+[[release]]
+species   = "PMCH"
+geometry  = "point"
+lon       = [-84.05]
+lat       = [39.80]
+z         = [0.0, 100.0]            # near-surface release layer
+zkind     = "agl"
+time      = [1983-09-18T17:00:00, 1983-09-18T20:00:00]   # 3 h (emit-t1.txt)
+particles = 400000
+mass      = "208kg"                 # 208 000 g PMCH (emit-t1.txt)
+
+[physics]
+ctl       = 10.0
+ifine     = 10
+  [physics.turbulence]
+  scheme = "thomson"
+  [physics.convection]
+  scheme = "massflux"
+
+[output]
+kernel     = "adaptive"
+resolution = true
+quantity = "concentration"
+path     = "results/captex/"
+interval = "3h"                     # frames end on 3-h boundaries (obs windows)
+average  = "3h"
+sample   = "30min"
+[output.grid]
+lon0 = -100.0
+lat0 = 30.0
+nx   = 160
+ny   = 100
+dx   = 0.25
+dy   = 0.25
+heights = [0.0, 100.0]              # single 0–100 m sampling layer
+
+  [output.receptors]
+  file      = "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/CAPTEX/stations.txt"
+  layer_top = "100m"
