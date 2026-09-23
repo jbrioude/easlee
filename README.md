@@ -1,69 +1,135 @@
-![](assets/easlee_logo.png "EASLEE logo")
+<p align="center">
+  <img src="assets/easlee_logo.png" alt="EASLEE logo" width="180">
+</p>
 
-# EASLEE — transport distribution
+# EASLEE — the transport release
 
-An atmospheric **Lagrangian particle dispersion model** (LPDM) written in **Julia**, in the lineage of FLEXPART. Everything is driven by a **single TOML** **config** (or the web GUI) through one engine and one entry point — there are no per-task scripts to edit.
+**Where does the air go?** Give EASLEE some weather data and a release — a
+chimney, a wildfire, a volcano, an accidental leak — and it follows millions of
+imaginary air parcels through the atmosphere to show where the material
+travels, how it spreads out, and where it comes back down. Run it the other way
+round and it answers the reverse question: for a measurement taken at one
+place and time, which upwind regions did that air come from?
+
+Technically, it is a **Lagrangian particle dispersion model** in the lineage of
+FLEXPART, written in **Julia**. One run is described by a **single TOML file**
+(or built in the web interface), and one command starts it — there are no
+per-task scripts to edit.
+
+```bash
+julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
+```
+
+**→ Start with [HOWTO.md](HOWTO.md)**: installing it on Linux and Windows,
+running it from the command line or the web interface, pointing it at WRF data,
+and nesting WRF inside ERA5 or GFS.
+
+> **What is in this release.** This is the **transport engine** only. The
+> reactive-chemistry module — gas-phase mechanisms, chemical solvers,
+> photolysis, heterogeneous chemistry, emission inventories, the adjoint — is
+> not included here. Mixing between trajectories and the adaptive output kernel
+> *are* included.
+
+**→ What changed in v1.1** (transport, weather-data reading and output — no
+chemistry): [CHANGES.md](CHANGES.md).
+
+## What it can do
+
+- **Weather data.** Runs on **WRF**, ERA5, NCEP GFS, MERRA-2, AROME and
+  Meso-NH. Grids can be **nested**: put a fine WRF domain inside a global ERA5
+  or GFS field, list the finest first, and parcels leaving the fine domain are
+  handed to the coarser one automatically. Regular latitude–longitude, Lambert
+  conformal and polar-stereographic grids are all handled, including runs that
+  cross the poles.
+
+- **Both directions.** *Forward*: release material at a source and follow it
+  downwind. *Backward*: start from an instrument and compute which upwind areas
+  could have contributed to what it measured — the source–receptor sensitivity
+  that inverse modelling needs.
+
+- **Small-scale motion.** Random turbulent jostling (Hanna and Thomson
+  schemes), and deep convection — the fast updraughts inside storm clouds —
+  either read from the weather model or diagnosed from the instability it
+  carries.
+
+- **Loss along the way.** Material is removed by dry deposition at the surface,
+  washout by rain, radioactive decay, and gravitational settling of heavy
+  particles.
+
+- **Turning parcels into a map.** The classic method averages parcels onto a
+  fixed grid. EASLEE also offers an adaptive kernel that widens where the
+  trajectories are sparse and tightens where they are dense (**kNN**), and
+  reports a per-cell resolution field *R(x)* so you can see which parts of the
+  map are well sampled and which are mostly noise. See
+  [docs/OUTPUT_GRID.md](docs/OUTPUT_GRID.md).
+
+- **Aerosols.** Particle size distributions (lognormal or binned), the swelling
+  of particles as humidity rises (κ-Köhler), and optical depth from Mie theory.
+  Sea spray is emitted from the wave state (Ovadnevaite), and species can
+  convert from one form into another in flight.
+
+- **The vertical.** EASLEE follows whatever vertical coordinate the weather
+  model itself uses. Motion can be kinematic, hybrid, or isentropic (following
+  surfaces of constant potential temperature).
+
+- **Plume rise.** Smoke rises above a fire before it starts drifting (Sofiev's
+  fire-radiative-power scheme by default, Freitas's 1-D column as an option).
+  Volcanoes get their own treatment: a 1-D moist eruption column feeding a
+  Lagrangian plume phase with two-phase washout.
+
+- **Species database.** Each chemical species carries its molar mass, its dry
+  and wet deposition behaviour, and its decay rate
+  ([docs/SPECIES_DB.md](docs/SPECIES_DB.md)).
+
+- **Wind dimensionality.** Run with full 3-D winds, or deliberately restrict
+  the wind to 2-D or 1-D to isolate what vertical mixing and convection are
+  contributing.
+
+- **Warm start.** Checkpoints save the complete state of a run, so a finished
+  run can be extended rather than simulated again from the beginning.
+
+- **Output.** Gridded NetCDF in time frames (the same averaging semantics as
+  FLEXPART's LOUTSTEP/LOUTAVER), time series at receptor points with no grid at
+  all, and per-trajectory CSV. Output grids can be in height, pressure, model
+  level, or potential temperature.
+
+- **Web interface** for building a config, launching the run, and plotting the
+  result.
+
+- **GPU, optionally.** Set `EASLEE_ADVANCE=ka_gpu` to move the particle advance
+  onto the GPU; CUDA is installed only if you ask for it. Every run prints one
+  line at startup saying whether the GPU is genuinely being used
+  (`GPU backend enabled: <device>; CUDA initialized`) or not, and why — see
+  `HOWTO.md` §1.3.
+
+EASLEE has been checked against two real tracer-release experiments, where a
+measured gas was deliberately released and tracked by a ground network:
+**CAPTEX-83** (RANK ≈ 2.5) and **ETEX-1**, where it is competitive with
+FLEXPART 11. See [docs/CAPTEX_RESULTS.md](docs/CAPTEX_RESULTS.md) and
+[docs/ETEX_RESULTS.md](docs/ETEX_RESULTS.md).
+
+## What is in the box
 
 ```
-julia --project=easlee scripts/easlee.jl configs/wrf\_era5\_nest.toml
-```
-
-\*\*→ Start with [HOWTO.md\*\*](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/HOWTO.md): install (Linux and Windows), run from the command line or the web interface, point EASLEE at WRF data, and nest WRF inside ERA5 or GFS.
-
-> **Scope of this distribution.** This is the **transport engine**. The reactive-chemistry module (gas-phase mechanisms, solvers, photolysis, heterogeneous chemistry, emissions inventories, adjoint) is not part of it. Inter-trajectory **mixing** and the **kNN adaptive output kernel** *are* included.
-
-**→ What changed in v1.1** (transport, met reading, output — no chemistry): [CHANGES.md](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/CHANGES.md).
-
-## Features
-
-- **Transport**: forward & backward (source–receptor sensitivity) on **WRF**, ERA5, NCEP GFS, MERRA-2, AROME and Meso-NH meteorology, with arbitrary **nesting** (finest domain first; parcels are handed to the coarser driver on exit); regular lat-lon grid, lambert conformal and polar-stereographic handling at the poles on global grids.
-
-- **Turbulence** (Hanna, Thomson) and **convection** (archived mass-flux, diagnostic CAPE-gated), **dry/wet** **deposition**, radioactive **decay**, gravitational **settling**.
-
-- **Output estimators**: averaging kernel on a regular grid, adaptative kernel based on inter-trajectory spacing (**kNN)**, a per-cell resolution field R(x)based on inter-trajectory spacing is also given. See [docs/OUTPUT\_GRID.md](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/docs/OUTPUT_GRID.md).
-
-- **Aerosols**: lognormal / binned size distributions, κ-Köhler growth, Mie AOD; sea-spray source (Ovadnevaite wave-Reynolds flux); in-flight species conversion.
-
-- **Vertical coordinates**: follows the Eulerian native coordinate. It can be kinematic, hybrid and isentropic.
-
-- **Plume rise**: biomass-burning (Sofiev FRP default, Freitas 1-D option) and a volcanic module (1-D moist eruption column + Lagrangian plume phase with two-phase washout).
-
-- **Species database**: Species with molar mass, dry/wet deposition and decay ([docs/SPECIES\_DB.md](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/docs/SPECIES_DB.md)).
-
-- **Wind dimensionality** (3D / 2D / 1D) to isolate vertical mixing and convection.
-
-- **Warm start**: full-state checkpoints (`\\\[run\\\] checkpoint`/`restart`) — extend a finished run without re-simulating.
-
-- **Output**: time-framed gridded NetCDF (FLEXPART LOUTSTEP/LOUTAVER semantics), gridless receptor time series, per-trajectory CSV; flexible grids and vertical coordinates (height / pressure / model level / theta).
-
-- **Web GUI** for building configs, running, and plotting.
-
-- Optional **GPU** particle advance (`EASLEE\\\_ADVANCE=ka\\\_gpu`; CUDA is installed only if you use it). Every run prints one startup line saying whether the GPU is actually in use (`GPU backend enabled: \\\<device\\\>; CUDA initialized`) or not, and why — see `HOWTO.md` §1.3.
-
-Validated against tracer experiments: **CAPTEX-83** (RANK ≈ 2.5) and **ETEX-1** (competitive with FLEXPART 11) — see [docs/CAPTEX\_RESULTS.md](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/docs/CAPTEX_RESULTS.md) and [docs/ETEX\_RESULTS.md](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/docs/ETEX_RESULTS.md).
-
-## Layout
-
-```
-easlee/          the engine (Julia source) + its run environment    
-scripts/         easlee.jl (entry point) and run\\\_config.jl (lower-level runner)    
-configs/         example TOML run configs, including the WRF ones    
-listvariables/   met variable namelists (\\\<NAME\\\>.vars), one per dataset    
-docs/            reference documentation    
-test/            self-contained tests (synthetic data, no met archive needed)    
-validation/      checks that need a real met archive + CAPTEX/ETEX DATEM scoring    
-webgui/          the web interface    
+easlee/          the engine (Julia source) and its run environment
+scripts/         easlee.jl (the entry point) and run_config.jl (lower-level runner)
+configs/         example TOML run configs, including the WRF ones
+listvariables/   which variables to read from each weather dataset (<NAME>.vars)
+docs/            reference documentation
+test/            self-contained tests (synthetic data, no weather archive needed)
+validation/      checks that need a real weather archive, plus CAPTEX/ETEX scoring
+webgui/          the web interface
 tools/           plotting and profiling utilities
 ```
 
-## Quick check
+## Check that it works
 
-```
-julia --project=easlee -e 'import Pkg; Pkg.instantiate()'   \\\# once    
-julia --project=easlee test/runtests.jl                     \\\# 30 tests, no data needed
+```bash
+julia --project=easlee -e 'import Pkg; Pkg.instantiate()'   # once
+julia --project=easlee test/runtests.jl                     # 30 tests, no data needed
 ```
 
 ## Licence and citation
 
-GPL-3.0-or-later ([LICENSE](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/LICENSE)). If you use EASLEE in your research, please cite it as described in [CITATION.cff](file:///media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/easlee_v1_1_shared/CITATION.cff).
-
+GPL-3.0-or-later ([LICENSE](LICENSE)). If you use EASLEE in your research,
+please cite it as described in [CITATION.cff](CITATION.cff).
