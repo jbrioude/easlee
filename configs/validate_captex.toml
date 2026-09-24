@@ -14,7 +14,7 @@ threads  = 6
 
 [[meteorology]]
 model = "ERA5"
-path  = "/data/CAPTEX"
+path      = "data/ERA5_CAPTEX"
 variables = "ERA5_CAPTEX"
 
 [[release]]

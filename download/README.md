@@ -9,7 +9,7 @@ runs the same scripts.
 |---|---|---|---|
 | `gfs.py` | NCEP GFS 0.25/0.5/1.0° forecasts (NOMADS, last ~10 days; NOAA archive on AWS, 2021 onward) | none | `python3 download/gfs.py --analysis 2026-06-03T00 --hours 48 --out ./data/GFS` |
 | `merra2.py` | NASA MERRA-2 3-hourly model-level reanalysis (GES DISC) | free Earthdata account | `EARTHDATA_TOKEN=… python3 download/merra2.py --start 2022-01-18 --end 2022-01-29 --out ./data/MERRA2` |
-| `era5_archive.py` | prepared ERA5 archives of the validation cases (ETEX-1, CAPTEX-83), links in `links.toml` | none | `python3 download/era5_archive.py --dataset etex --out ./data/ERA5_ETEX` |
+| `era5_archive.py` | prepared ERA5 archives of the validation cases (ETEX-1, CAPTEX-83), links in `links.toml` | none | `python3 download/era5_archive.py --dataset etex` |
 | `easlee_available.py` | (re)write the index of an existing directory | — | `python3 download/easlee_available.py --model GFS --dir ./data/GFS` |
 | `repack_grib.py` | shrink a GRIB archive ~3x with 12-bit JPEG packing, for publishing or archiving | none | `python3 download/repack_grib.py /data/ETEX --out ./ETEX_jpeg` |
 
@@ -49,6 +49,11 @@ range, so the largest error is range/4096, about 0.004 m/s on a wind field and
 (`docs/BENCHMARKS.md` 0).  Constant and near-constant fields, which the JPEG
 coder rejects, keep their original packing; that is why the gain is ~3x and not
 16/12.
+
+`era5_archive.py --dataset etex` unpacks into `data/ERA5_ETEX` and writes the
+`AVAILABLE` index with the `ERA5_CAPTEX` namelist, which is what the `configs/etex_*`
+and `configs/validate_*` files already expect, so a fresh clone needs no path editing.
+The CAPTEX archive lands in `data/ERA5_CAPTEX` the same way.
 
 Pack the result as a plain `.tar`, not `.tar.gz`.  JPEG-packed GRIB is already
 compressed, so gzip buys almost nothing and costs time at both ends;

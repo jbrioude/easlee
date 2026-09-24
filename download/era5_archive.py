@@ -24,6 +24,10 @@ import easlee_available  # noqa: E402
 
 LINKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "links.toml")
 
+# The prepared archives are flex_extract IFS_EA_* files with IFS_SFC_* companions,
+# which is what ERA5_CAPTEX.vars declares (ERA5_CONV.vars expects _MET_/_CLD_).
+DEFAULT_VARS = {"etex": "ERA5_CAPTEX", "captex": "ERA5_CAPTEX"}
+
 
 def read_links():
     links = {}
@@ -41,13 +45,15 @@ def main(argv=None):
     ap.add_argument("--dataset", choices=["etex", "captex"], help="named archive from links.toml")
     ap.add_argument("--url", help="archive URL (.tar.gz / .tgz / .zip), overrides --dataset")
     ap.add_argument("--out", default=None, help="target directory (default ./<DATASET>_ERA5)")
-    ap.add_argument("--vars", default="ERA5_CONV", help="variables namelist for the index")
+    ap.add_argument("--vars", default=None,
+                    help="variables namelist for the index (default: ERA5_CAPTEX for the prepared archives)")
     ap.add_argument("--keep-archive", action="store_true")
     a = ap.parse_args(argv)
     url = a.url or read_links().get(f"{a.dataset}_era5", "") if (a.url or a.dataset) else ""
     if not url:
         sys.exit("no URL: give --url, or --dataset etex|captex with the link filled in download/links.toml")
-    out = a.out or f"./{(a.dataset or 'archive').upper()}_ERA5"
+    vars_ = a.vars or DEFAULT_VARS.get(a.dataset, "ERA5_CONV")
+    out = a.out or f"./data/ERA5_{(a.dataset or 'archive').upper()}"
     os.makedirs(out, exist_ok=True)
     arc = os.path.join(out, os.path.basename(url.split("?")[0]) or "era5_archive.tar.gz")
     if not os.path.exists(arc):
@@ -66,8 +72,8 @@ def main(argv=None):
         with tarfile.open(arc) as t:
             t.extractall(out)
     a.keep_archive or os.remove(arc)
-    easlee_available.write_available(out, "ERA5", a.vars)
-    print(f"[[meteorology]]  model = \"ERA5\"  path = \"{os.path.abspath(out)}\"  variables = \"{a.vars}\"  available = \"auto\"")
+    easlee_available.write_available(out, "ERA5", vars_)
+    print(f"[[meteorology]]  model = \"ERA5\"  path = \"{out}\"  variables = \"{vars_}\"  available = \"auto\"")
 
 
 if __name__ == "__main__":

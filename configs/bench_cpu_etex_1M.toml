@@ -33,7 +33,7 @@ benchmark = true                    # per-group timing report at run end
 
 [[meteorology]]
 model     = "ERA5"
-path      = "/data/ETEX"            # <-- point this at the met you were sent
+path      = "data/ERA5_ETEX"            # <-- point this at the met you were sent
 variables = "ERA5_CAPTEX"
 available = "auto"
 max_gap   = "6h"

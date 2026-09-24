@@ -21,7 +21,7 @@ benchmark = true
 
 [[meteorology]]
 model     = "ERA5"
-path      = "/data/ETEX"
+path      = "data/ERA5_ETEX"
 variables = "ERA5_CAPTEX"
 available = "auto"
 
