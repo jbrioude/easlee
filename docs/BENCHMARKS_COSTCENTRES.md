@@ -1,6 +1,6 @@
-# Cost-centre scaling — plume vs domainfill, 100K–20M parcels (zion, 2026-07-18)
+# Cost-centre scaling: plume vs domainfill, 100K–20M parcels (workstation, 2026-07-18)
 
-Machine zion (Threadripper 3970X, **32 threads**), ERA5 May-2025 **crop="off"
+Machine: the reference workstation (Threadripper 3970X, **32 threads**), ERA5 May-2025 **crop="off"
 (met global 60S–60N non croppé)**, fenêtre 3 h / pas 15 min (12–13 pas),
 turbulence Hanna, mixing pairwise, dépôt gaz HNO3 (dry+wet), kernel adaptatif.
 Postes = `bench_report` (`[run] benchmark=true`). Temps = secondes TOTALES sur

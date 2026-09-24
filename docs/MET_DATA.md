@@ -164,7 +164,7 @@ never enter it.
 The **GRIB header cannot be trusted** for the unit: ERA5 files carry
 `stepType=accum`, `units = J m**-2` / `N m**-2 s` whether the values are raw
 MARS accumulations (J/m² over the step) or flex_extract de-accumulated
-per-second values (W/m², N/m²).  The archive on zion
+per-second values (W/m², N/m²).  The archive on the reference workstation
 (`/data/ECMWF/ERA5/EAg/2013/EAg13091700`) has `sshf ∈ [−405, 223]` and
 `|τ| ≤ 4` under an "accumulated" header — physical only as W/m² and N/m².
 Dividing those by 3600 (the old unconditional rule) made |L| 3600× too large

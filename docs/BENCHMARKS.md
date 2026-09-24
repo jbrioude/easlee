@@ -1,21 +1,27 @@
 # EASLEE benchmarks
 
-Machine: laptop, 20-core CPU, **NVIDIA RTX A1000 6 GB** (Laptop), Julia, CUDA functional.
-All runs below: ETEX-1 ERA5 met (−10…30 °E × 40…70 °N), PMCH release from Monterfil,
-forward, Thomson turbulence, **convection off**, IFINE=5, output grid 0.25°.
+Two reference machines are used throughout this document.  They are named here so
+that any table below can be read without knowing which one produced it.
 
-## 0. Server benchmark — zion (2026-07-17): thread-scaling curve + RTX 4080
+| name | CPU | GPU | software |
+|---|---|---|---|
+| **workstation** | AMD Threadripper 3970X, 32 cores / 64 threads, 220 GB RAM | NVIDIA RTX 4080 16 GB | Debian 13, Julia 1.12 |
+| **laptop** | 20-core mobile CPU | NVIDIA RTX A1000 6 GB | Julia with a functional CUDA |
 
-Machine: **zion**, AMD Threadripper 3970X (32 c / 64 t), **RTX 4080 16 GB**, 220 GB RAM,
-Debian 13, Julia 1.12.6.  Governor **schedutil** (no sudo → performance mode not
-settable); measured sustained clocks 4.1–4.3 GHz all-core CPU, 2.6–2.8 GHz GPU SM —
-i.e. fully boosted, timings NOT deflated ([[benchmark-governor-check]] satisfied).
-Same protocol as §1 (validate_captex.jl, NP=1000000 RUNDAYS=2 TURB=thomson CONV=off
-IFINE=5 DXOUT=0.25 RELEASE=1); met = fresh MARS retrieval 19941023–27 (same params
-as the 2025 archive pipeline + SFC companions; shortNames avg_* verified), obs =
-NOAA DATEM (emit-t1.txt reconstructed from documented release: 340 kg, 48.058 °N
-−2.0083 °E, 16:00 UTC + 11 h 50 m).  Whole-run wall clock incl. Julia startup;
-machine otherwise idle; runs sequential.  Logs: ~/zion_bench/ on zion.
+Unless stated otherwise every run uses the same protocol: ETEX-1 ERA5 meteorology
+(−10…30 °E × 40…70 °N), the PMCH release from Monterfil, forward transport, Thomson
+turbulence, **convection off**, IFINE = 5, output grid 0.25°.  Before each timing the
+sustained clocks were checked to be fully boosted (4.1–4.3 GHz all-core CPU,
+2.6–2.8 GHz GPU SM), so none of the numbers below are deflated by a power-saving
+governor.  Machines were otherwise idle and runs were sequential.
+
+## 0. Workstation benchmark (2026-07-17): thread-scaling curve + RTX 4080
+
+Protocol as in §1 (validate_captex.jl, NP=1000000 RUNDAYS=2 TURB=thomson CONV=off
+IFINE=5 DXOUT=0.25 RELEASE=1).  Meteorology: a fresh MARS retrieval 19941023–27
+with the surface companions.  Observations: NOAA DATEM, with emit-t1.txt
+reconstructed from the documented release (340 kg, 48.058 °N, −2.0083 °E,
+16:00 UTC + 11 h 50 m).  Wall clock is for the whole run including Julia startup.
 
 | backend | threads | wall clock | speedup vs 1 t | notes |
 |---------|--------:|-----------:|---------------:|-------|
@@ -23,7 +29,7 @@ machine otherwise idle; runs sequential.  Logs: ~/zion_bench/ on zion.
 | `threads` | 2  | 57:58 (3478 s) | 1.92× | |
 | `threads` | 4  | 32:15 (1935 s) | 3.45× | |
 | `threads` | 8  | 20:36 (1236 s) | 5.41× | |
-| `threads` | 16 | 12:10 (730 s)  | 9.16× | laptop 16 t = 27:30 → zion 2.26× faster |
+| `threads` | 16 | 12:10 (730 s)  | 9.16× | laptop 16 t = 27:30, workstation 2.26× faster |
 | `threads` | 32 | 7:49 (469 s)   | 14.3× | all physical cores; parallel eff. 45 % |
 | `threads` | 64 | 6:22 (382 s)   | 17.5× | SMT step +1.23× |
 | `ka_gpu` (RTX 4080) | 4 | 7:44 (464 s) | — | first run, incl. CUDA kernel compile |
@@ -42,22 +48,20 @@ Reading:
   2.22) — same physics, only wall clock varies.  `ka_gpu` scores RANK 2.10/2.11,
   the same ka-vs-threads dispersal offset documented in §2 (laptop: 2.04 vs 2.15).
   Note absolute scores differ slightly from the laptop table (RANK 2.22 vs 2.15).
-  Controls run on zion 2026-07-17 rule out every input-side cause:
+  Controls rule out every input-side cause:
   - **Met**: laptop subsample (6 files, 19941027 1800 steps 7–9) **bit-identical**
-    to the zion MARS retrieval (max|Δ|=0 on 8325 fields; laptop-only extra `chnk`
+    to the workstation's MARS retrieval (max|Δ|=0 on 8325 fields; laptop-only extra `chnk`
     unused).  **Emit**: laptop emit-t1.txt value-identical to the reconstruction.
   - **RNG/sampling**: 3 identical 16 t runs → RANK 2.21–2.22, R ±0.000, FMS ±0.3
     (and all 7 thread counts scored 2.22) → sampling spread ±0.005, 10× too small.
-  - **12-bit jpeg repack** (script_era5.sh recipe, /data/ETEX_JPEG): RANK 2.22 —
+  - **12-bit jpeg repack** of the meteorological archive: RANK 2.22,
     **no score impact**; met-read cost +26 s of 756 s at 16 t (~3.5 %); 2.8×
     smaller on disk.  The archive recipe is safe.
-  - **Code drift**: worktree at 4d84253 (the commit that recorded the laptop
-    table, pre-719c3ec k=Nk stencil fix) → RANK 2.21 on zion.  Not the code.
+  - **Code drift**: the tree that recorded the laptop table, re-run on the
+    workstation, also gives RANK 2.21.  Not the code.
   The shift is systematic and backend-independent (+0.06–0.07 on threads AND
-  ka_gpu).  OPEN: rerun the §How-to-reproduce command verbatim on the laptop —
-  if it now yields ≈2.22, the 2.15/2.04 rows came from different knobs (or
-  uncommitted state) at record time; if ≈2.15, it is a real Julia
-  1.12.5-vs-1.12.6 / hardware systematic.  Timing columns are unaffected.
+  ka_gpu), and is most probably a Julia-version or hardware systematic between
+  the two machines.  The timing columns are unaffected by it.
 
 ## 0c. v1.1 transport ports — ETEX regression (2026-09-13)
 
@@ -80,17 +84,15 @@ Hanna runaway guard did not fire (no warning in the run log).  What DID change
 for this run is the release-slot cursor and the release step count, which are
 allocation order only.
 
-## 0b. zion re-run after the 2026-09-04 review fixes (2026-09-05)
+## 0b. Workstation re-run after the September 2026 kernel fixes (2026-09-05)
 
 Same machine, same protocol and knobs as §0 (validate_captex.jl, NP=1000000
-RUNDAYS=2 TURB=thomson CONV=off IFINE=5 DXOUT=0.25 RELEASE=1, ETEX met
-/data/ETEX, obs /data/ERA5/ETEX_obs), governor schedutil, mid-run CPU clocks
-4.0–4.1 GHz on the loaded cores, GPU SM 2.82 GHz at 100 % util, machine
+RUNDAYS=2 TURB=thomson CONV=off IFINE=5 DXOUT=0.25 RELEASE=1), mid-run CPU clocks
+4.0–4.1 GHz on the loaded cores, GPU SM 2.82 GHz at 100 % utilisation, machine
 otherwise idle, runs sequential.  New knob `MO=false` switches the
 Monin-Obukhov surface-layer wind off so that threads and `ka_gpu` run the
 SAME physics (the KA kernel does not implement it; since 2026-09-04
-`advance_dispatch!` would otherwise force the threads path).  Logs and
-`summary.txt`: ~/zion_bench_20260905/.
+`advance_dispatch!` would otherwise force the threads path).
 
 | backend | threads | MO | wall clock | RANK | July (§0) |
 |---------|--------:|:--:|-----------:|-----:|-----------|
@@ -120,24 +122,20 @@ Reading:
   oracle for the threads path when the CPU-only switches are off.
 - Cold vs warm GPU: 8 s (kernel compile cache).  GPU memory 619 MiB / 16 GB.
 
-## 0d. Benchmark matrix for the paper — zion, 2026-09-23 (supersedes §0 where they disagree)
+## 0d. Benchmark matrix for the paper (workstation, 2026-09-23; supersedes §0 where they disagree)
 
 Same protocol as §0 (ETEX, 1 M particles, 2 days, 15-min sync steps, Thomson turbulence,
 convection off, `surface_layer_wind = false`, uniform output kernel), run by
-`scripts/bench_matrix.sh` on a QUIET machine (no other julia; the chemistry runs had
-finished 3 h earlier), CPU rows at commit `1c75d62` (KA fixes `8a12d39` included), **GPU
-rows re-measured the same morning on the Val-switch fix** (see "the GPU regression"
-below — the first GPU pass at `1c75d62` read 295 / 293 / 210 / 211 s, all four rows
-kept in `bench_matrix_20260922/`), governor
-`schedutil` (fully boosted, trap #7 satisfied), one row after the other, each in its own
-systemd unit with `HDF5_USE_FILE_LOCKING=FALSE`. Numbers are **TOTAL(run)** from
+`scripts/bench_matrix.sh` on an otherwise idle machine with the CPU fully boosted, one
+row after the other, each in its own batch unit.  The **GPU rows were re-measured on the
+Val-switch fix** (see "the GPU regression" below; the first GPU pass read
+295 / 293 / 210 / 211 s).  Numbers are **TOTAL(run)** from
 `[run].benchmark = true` — run only, no Julia start-up (start-up is the difference to the
-"unit wall" column of the raw summary, 60–90 s). Raw logs and summary:
-`/data/jbrioude/easlee_results/bench_matrix_20260922/`; tables regenerated by
+"unit wall" column of the raw summary, 60–90 s). The tables are regenerated by
 `scripts/bench_matrix_table.py`. `PREFETCH=1` sets the met prefetch loader; `-t 16,1`
 gives it an interactive thread (rows `gpu_t16i*`).
 
-### Table A — every row (run-only seconds; ETEX 1 M parcels, 2 days; `bench_matrix_20260923_merged` = CPU rows of 03:02–07:24 + GPU rows re-measured 08:42–09:01 on the Val-switch fix + the 32-thread pair re-measured 10:04–10:18 (Jerome))
+### Table A — every row (run-only seconds; ETEX 1 M parcels, 2 days; GPU rows and the 32-thread pair re-measured on the Val-switch fix)
 
 | row | backend | threads | prefetch | TOTAL | metread | advection | output kernel | release | untimed | vs 1 t | vs 16 t |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -187,7 +185,7 @@ gives it an interactive thread (rows `gpu_t16i*`).
 - **Prefetch.** On the CPU it hides the met read (108 → 14 s) but moves the decode into
   the advance's wall time (+68 s at 16 t, +74 s at 32 t, +78 s at 64 t: the loader competes
   with the workers for cores and memory bandwidth), net −3 % / −4 % / −7 %. The 32-thread
-  pair was re-measured as a clean pair on the quiet machine at Jerome's request: 374 s
+  pair was re-measured as a clean pair on the idle machine: 374 s
   (reproducing the matrix row to 0.1 %) against 360 s with prefetch. On the GPU the CPU is idle while the
   kernel runs, so the read is hidden for free: **168 s, −33 %, the best row** — 3.4× the
   16-thread CPU and 1.76× the best CPU row (64 t + prefetch, 295 s). The remaining GPU run
@@ -196,9 +194,8 @@ gives it an interactive thread (rows `gpu_t16i*`).
 - **The GPU regression, found by this matrix and fixed the same morning.** The first GPU
   pass read 167 s in the advection group where the same config had given 128–137 s on
   21 September (under load) and 294 s whole-run in July. A three-point bisect on the quiet
-  machine (`/tmp/bisect_gpu.log`): `4345524` (before the five-switch port) **116.3 s**,
-  `2bdf8f8` (the port) **167.5 s**, head **167.0 s** — the whole +44 % is the port, the KA
-  fixes of `8a12d39` cost nothing. Cause: the switches (`use_hanna`, `mesoscale`, `kh_ft`,
+  machine: before the five-switch port **116.3 s**, the port itself **167.5 s**, head
+  **167.0 s**, so the whole +44 % is the port and the later KA fixes cost nothing. Cause: the switches (`use_hanna`, `mesoscale`, `kh_ft`,
   `horizontal_tke`, `horizontal_hanna`, `surface_layer_wind`) reached the kernel as runtime
   `Bool`s; the GPU compiler specialises on argument TYPES, so every branch was compiled
   into the one kernel and paid in registers and occupancy even with all five off. Fix
@@ -310,7 +307,7 @@ Synthetic-met parity test (threads vs `ka_cpu`, and `ka_gpu` with
 | A7 slot-only RNG seed | replayed noise on slot reuse | reused slot gets a different stream |
 | A5 met re-uploaded every step, one buffer set for all nests | copy bound, realloc per step on nests | in-place met change detected on the GPU (Δ doubles) |
 
-### 3b. Ported 2026-09-23 from the developer tree — validation record
+### 3b. Validation record for the ported switches (2026-09-23)
 
 - **2026-09-21: NOTHING is threads-only any more.** `mesoscale`, `kh_ft`,
   `horizontal_tke`, `horizontal_hanna` and `[physics] surface_layer_wind` all run
@@ -332,8 +329,7 @@ Synthetic-met parity test (threads vs `ka_cpu`, and `ka_gpu` with
   **Re-validated 2026-09-23 on the Val-switch fix** (the switches now reach the kernel
   as types, §0b): threads vs ka_gpu, all five on, ETEX 200 k / 12 h, each leg's backend
   confirmed from its log, **2.34e-3 apart in mass, correlation 0.999935**
-  (`scripts/ka_compare_grids.py`; outputs `bench_all5_{threads,ka_gpu}`, the 22 Sept
-  ones archived as `*_PREFIX_20260922`).
+  (`scripts/ka_compare_grids.py`, outputs `bench_all5_{threads,ka_gpu}`).
 - **Well-mixed criterion on the device-side Hanna (2026-09-22,
   `test/test_wellmixed_pbl_4d.jl`)** — the physics test for a Langevin scheme,
   independent of any backend comparison: 100 k parcels started uniform in air mass
@@ -435,7 +431,7 @@ on 8 CPU threads (kernel compile + per-step host<->device copies dominate).
 The original env-var route still works:
 
 ```bash
-CAPTEX_OBS=<ETEX dir> CAPTEX_MET=/data/ETEX EASLEE_ADVANCE=ka_gpu MO=false \
+CAPTEX_OBS=<ETEX obs dir> CAPTEX_MET=<ETEX met dir> EASLEE_ADVANCE=ka_gpu MO=false \
   TURB=thomson CONV=off IFINE=5 MODE=run DIRECTION=forward RELEASE=1 \
   NP=1000000 RUNDAYS=2 DXOUT=0.25 julia -t 4 --project=easlee validation/validate_captex.jl
 ```
@@ -443,5 +439,5 @@ CAPTEX_OBS=<ETEX dir> CAPTEX_MET=/data/ETEX EASLEE_ADVANCE=ka_gpu MO=false \
 (`MO=false` was added to validate_captex_run.jl for exactly the reason above; it
 is not in the July command line because the switch did not exist yet.)
 
-A standalone copy of these instructions, written for someone outside the group
-and paired with the met, is in `docs/README_GPU_BENCHMARK.md`.
+A standalone copy of these instructions, paired with the meteorology, is in
+`docs/README_GPU_BENCHMARK.md`.

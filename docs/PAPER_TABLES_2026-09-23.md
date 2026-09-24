@@ -1,6 +1,6 @@
 # Paper tables from the 2026-09-23 benchmark matrix (for Sect. 5 of EASLEE v1.0 GMD)
 
-Source: `docs/BENCHMARKS.md` §0b (zion, Threadripper 3970X 32c/64t, RTX 4080; ETEX-1, 1 M parcels, 2 days, ERA5 hourly, Thomson, convection off, governor schedutil, quiet machine). Times are RUN-ONLY (the model's own `TOTAL(run)`); Julia start-up adds ~1 min to every row and is excluded so that the speed-ups are the model's. The July Table 4 was whole-run including start-up: 111.4 / 32.3 / 12.2 / 7.8 / 6.4 / 4.9 min; the new run-only rows are 98.5 / 28.0 / 9.6 / 6.2 / 5.3 / 4.2 min, i.e. the same machine and code family within the start-up offset except the GPU rows, which are re-measured on the kernel fix of 23 Sept.
+Source: `docs/BENCHMARKS.md` §0b (workstation, Threadripper 3970X 32c/64t, RTX 4080; ETEX-1, 1 M parcels, 2 days, ERA5 hourly, Thomson, convection off, otherwise idle machine, CPU fully boosted). Times are RUN-ONLY (the model's own `TOTAL(run)`); Julia start-up adds ~1 min to every row and is excluded so that the speed-ups are the model's. The July Table 4 was whole-run including start-up: 111.4 / 32.3 / 12.2 / 7.8 / 6.4 / 4.9 min; the new run-only rows are 98.5 / 28.0 / 9.6 / 6.2 / 5.3 / 4.2 min, i.e. the same machine and code family within the start-up offset except the GPU rows, which are re-measured on the kernel fix of 23 Sept.
 
 ## Table 4 (replacement) — run time and speed-up, reference ETEX-1 configuration
 

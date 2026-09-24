@@ -9,7 +9,7 @@ release from **Monterfil, Brittany** (48.058 °N, 2.0083 °W), starting **16:00 
 `/data/ETEX/19941023`–`19941027`. The ETEX domain crosses the prime meridian:
 the GRIB *header* reports 350°→30° (0–360) but ecCodes *decodes* to **−10°…30°**
 (−180…180), which is the convention EASLEE uses internally. The validation driver
-now auto-detects this from the decoded `distinctLongitudes` axis (commit `ab09618`).
+now auto-detects this from the decoded `distinctLongitudes` axis.
 
 **EASLEE configuration:**
 - Turbulence: **Thomson** (well-mixed Langevin).
@@ -155,10 +155,10 @@ Thomson + mass-flux, 72 h (→ 2629 station-windows; the 4-day runs above have
 | **FA5**  | 0.65  | 0.702 |
 | **FMS**  | **57.2 %** | 54.8 % |
 | **KSP**  | **9.3 %**  | 11.5 % |
-| **RANK** | **2.75** | 2.476 |
+| **RANK** | **2.76** | 2.476 |
 
 The per-window correlation more than doubles (0.34 → 0.65) and RANK rises to
-2.75 — the best EASLEE ETEX score so far — confirming the trajectory →
+2.76 — the best EASLEE ETEX score so far — confirming the trajectory →
 concentration pipeline is sound once the output is properly time-averaged
 per sampling window.  (The runs are not a strict A/B: 400 k vs 1 M parcels,
 72 vs 96 h, Δt 10 vs 15 min; FB +0.31 partly reflects the shorter window

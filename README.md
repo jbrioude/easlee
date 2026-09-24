@@ -46,7 +46,7 @@ julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
 
 - **GPU, optionally.** Set `EASLEE_ADVANCE=ka_gpu` to move the particle advance onto the GPU. CUDA is installed only if you ask for it. Every run prints one line at startup stating whether the GPU is genuinely in use (`GPU backend enabled: <device>; CUDA initialized`) or not, and why. See `HOWTO.md` §1.3.
 
-The model is evaluated against the **ETEX-1** and **CAPTEX-83** tracer experiments, for which EASLEE obtains composite ranks of **2.76** and **2.51** respectively, comparable to FLEXPART and other established LPDMs. See [docs/ETEX_RESULTS.md](docs/ETEX_RESULTS.md) and [docs/CAPTEX_RESULTS.md](docs/CAPTEX_RESULTS.md). It is also fast: the one-million-parcel, two-day ETEX-1 reference run completes in 12 min on 16 threads of a workstation, and in 5 min on its GPU ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
+The model is evaluated against the **ETEX-1** and **CAPTEX-83** tracer experiments, for which EASLEE obtains composite ranks of **2.76** and **2.51** respectively, comparable to other established LPDMs. See [docs/ETEX_RESULTS.md](docs/ETEX_RESULTS.md) and [docs/CAPTEX_RESULTS.md](docs/CAPTEX_RESULTS.md). It is also fast: the one-million-parcel, two-day ETEX-1 reference run completes in 12 min on 16 threads of a workstation, and in 5 min on its GPU ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
 
 ## What is in the box
 

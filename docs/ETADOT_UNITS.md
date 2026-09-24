@@ -1,6 +1,6 @@
 # ERA5 etadot units — the bug, and its independent confirmation
 
-## The bug (fixed 2026-08-12, commit 4f2dfc5)
+## The bug (fixed 2026-08-12)
 
 `easlee/src/io/initialize.jl` converted the archived vertical velocity to a
 level-index rate by dividing by the pressure thickness:
@@ -38,7 +38,7 @@ kinematic levdot dominates and was ~0. Not affected: the MERRA-2/GFS paths
    1.01e5, correlation 1.000. Lower levels degrade as expected, where ω also
    carries B·∂p_s/∂t and terrain effects.
 
-## Both conventions are supported (2026-08-12, after Jerome's correction)
+## Both conventions are supported (2026-08-12)
 
 The original `÷ Δp` was NOT simply wrong: it is correct for **flex_extract**
 output, which is what `calc_etadot` produces and what that code path was written

@@ -9,3 +9,6 @@ webgui/Manifest.toml
 # validation observation data (fetched separately — see data/README.md)
 data/*
 !data/README.md
+
+# LibreOffice lock files
+.~lock.*#

@@ -93,7 +93,7 @@ on 8 CPU threads — kernel compile plus the per-step host↔device copy dominat
 The 1 000 000-parcel, 2-day configuration here is the smallest size at which the
 comparison means anything.
 
-## Reference numbers (zion: Threadripper 3970X 32c/64t, RTX 4080 16 GB)
+## Reference numbers (workstation: Threadripper 3970X 32c/64t, RTX 4080 16 GB)
 
 1 000 000 parcels, 2 days, whole-run wall clock including Julia startup:
 

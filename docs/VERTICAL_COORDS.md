@@ -82,7 +82,7 @@ Two processes have hit this:
 | process | status |
 |---|---|
 | `plume_radiation` (radiative descent) | handled from the start — takes `thetap` |
-| `apply_species_settling!` (gravitational fall) | **was broken until 2026-07-31** (`fb16b1c`) |
+| `apply_species_settling!` (gravitational fall) | **was broken until 2026-07-31** |
 
 The correct treatment depends on the physics:
 
