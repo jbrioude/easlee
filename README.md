@@ -18,7 +18,7 @@ julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
 
 ## What it can do
 
-- **Meteorological input.** EASLEE ingests **WRF**, ERA5, NCEP GFS, MERRA-2, AROME and Meso-NH fields through a common level-index vertical transport formulation, so a new dataset is added by describing its variables in a small namelist rather than by writing new transport code. Domains can be **nested**: a fine WRF domain inside a global ERA5 or GFS field, finest listed first, with parcels handed to the coarser driver on exit. Regular latitude–longitude, Lambert conformal and polar-stereographic grids are handled, including transport across the poles of global grids.
+- **Meteorological input.** EASLEE ingests WRF, ERA5, NCEP GFS, MERRA-2, AROME and Meso-NH fields through a common level-index vertical transport formulation, so a new dataset is added by describing its variables in a small namelist rather than by writing new transport code. Domains can be **nested**: a fine WRF domain inside a global ERA5 or GFS field, finest listed first, with parcels handed to the coarser driver on exit. Regular latitude–longitude, Lambert conformal and polar-stereographic grids are handled, including transport across the poles of global grids.
 
 - **Both directions.** *Forward*: release material at a source and follow it downwind. *Backward*: start from a receptor and compute which upwind areas could have contributed to what it measured. This is the source–receptor sensitivity that inverse modelling requires.
 
