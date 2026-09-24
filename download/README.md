@@ -11,6 +11,7 @@ runs the same scripts.
 | `merra2.py` | NASA MERRA-2 3-hourly model-level reanalysis (GES DISC) | free Earthdata account | `EARTHDATA_TOKEN=… python3 download/merra2.py --start 2022-01-18 --end 2022-01-29 --out ./data/MERRA2` |
 | `era5_archive.py` | prepared ERA5 archives of the validation cases (ETEX-1, CAPTEX-83), links in `links.toml` | none | `python3 download/era5_archive.py --dataset etex --out ./data/ERA5_ETEX` |
 | `easlee_available.py` | (re)write the index of an existing directory | — | `python3 download/easlee_available.py --model GFS --dir ./data/GFS` |
+| `repack_grib.py` | shrink a GRIB archive ~3x with 12-bit JPEG packing, for publishing or archiving | none | `python3 download/repack_grib.py /data/ETEX --out ./ETEX_jpeg` |
 
 Then in the run configuration:
 
@@ -33,3 +34,22 @@ Notes
   (`IFS_EA_MET_*` + `IFS_EA_CLD_*`); see https://www.flexpart.eu/flex_extract.
 - The index is also written by the model itself after its first scan, and refreshed
   automatically when files are added, removed or resized (the sidecar records them).
+
+## Publishing an archive
+
+`repack_grib.py` re-packs a GRIB archive from `grid_simple`/16-bit to
+`grid_jpeg`/12-bit, which is about **3x smaller on disk** (measured 3.33x on the
+ETEX ERA5 archive: 1.49 GB -> 0.45 GB per day).  It mirrors the directory tree,
+copies non-GRIB files unchanged, never touches the source, and checks that every
+output file holds exactly as many GRIB messages as its input.
+
+The packing is lossy: each field is quantised to 4096 levels across its own
+range, so the largest error is range/4096, about 0.004 m/s on a wind field and
+0.004 K on a temperature field.  EASLEE's ETEX score is unchanged by it
+(`docs/BENCHMARKS.md` 0).  Constant and near-constant fields, which the JPEG
+coder rejects, keep their original packing; that is why the gain is ~3x and not
+16/12.
+
+Pack the result as a plain `.tar`, not `.tar.gz`.  JPEG-packed GRIB is already
+compressed, so gzip buys almost nothing and costs time at both ends;
+`era5_archive.py` unpacks `.tar`, `.tar.gz` and `.zip` alike.
