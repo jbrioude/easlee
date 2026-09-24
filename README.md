@@ -2,7 +2,7 @@
 
 # EASLEE : an Efficient AtmoSpheric Lagrangian Easy-to-usE particle dispersion model
 
-Lagrangian particle dispersion models (LPDMs) are widely used tools in the atmospheric sciences, from the interpretation of in situ measurements to source–receptor analysis and the inverse modelling of surface fluxes. Their practical use, however, still requires a level of technical expertise — compiling Fortran code, per-dataset preprocessors, configuration fragmented over several files — that is unrelated to the physics of the problem being studied.
+Lagrangian particle dispersion models (LPDMs) are widely used tools in the atmospheric sciences, from the interpretation of in situ measurements to source–receptor analysis and the inverse modelling of surface fluxes. Their practical use, however, still requires a level of technical expertise (compiling Fortran code, per-dataset preprocessors, configuration fragmented over several files) that is unrelated to the physics of the problem being studied.
 
 **EASLEE** (Efficient AtmoSpheric Lagrangian Easy-to-usE model) is a new LPDM in the lineage of FLEXPART, written entirely in the **Julia** language, and intended to remove that barrier. Because Julia is compiled just in time, no compilation step is exposed to the user: the same source code runs unmodified under **Linux, macOS and Windows**, and a run is defined by a single TOML configuration file or through a web-based graphical interface. Forward and backward (source–receptor) transport are both supported.
 
@@ -12,15 +12,15 @@ julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
 
 **→ Start with [HOWTO.md](HOWTO.md)**: installing it on Linux, macOS and Windows, running it from the command line or the web interface, pointing it at WRF data, and nesting WRF inside ERA5 or GFS.
 
-> **What is in this release.** This is the **transport engine** only. The reactive-chemistry module — gas-phase mechanisms, chemical solvers, photolysis, heterogeneous chemistry, emission inventories, the adjoint — is not included here. Mixing between trajectories and the adaptive output kernel *are* included.
+> **What is in this release.** This is the **transport engine** only. The reactive-chemistry module (gas-phase mechanisms, chemical solvers, photolysis, heterogeneous chemistry, emission inventories, the adjoint) is not included here. Mixing between trajectories and the adaptive output kernel *are* included.
 
-**→ What changed in v1.1** (transport, meteorological input and output — no chemistry): [CHANGES.md](CHANGES.md).
+**→ What changed in v1.1** (transport, meteorological input and output, no chemistry): [CHANGES.md](CHANGES.md).
 
 ## What it can do
 
 - **Meteorological input.** EASLEE ingests **WRF**, ERA5, NCEP GFS, MERRA-2, AROME and Meso-NH fields through a common level-index vertical transport formulation, so a new dataset is added by describing its variables in a small namelist rather than by writing new transport code. Domains can be **nested**: a fine WRF domain inside a global ERA5 or GFS field, finest listed first, with parcels handed to the coarser driver on exit. Regular latitude–longitude, Lambert conformal and polar-stereographic grids are handled, including transport across the poles of global grids.
 
-- **Both directions.** *Forward*: release material at a source and follow it downwind. *Backward*: start from a receptor and compute which upwind areas could have contributed to what it measured — the source–receptor sensitivity that inverse modelling requires.
+- **Both directions.** *Forward*: release material at a source and follow it downwind. *Backward*: start from a receptor and compute which upwind areas could have contributed to what it measured. This is the source–receptor sensitivity that inverse modelling requires.
 
 - **Turbulence and convection.** Boundary-layer turbulence through the Hanna and Thomson well-mixed Langevin schemes, and a mass-flux convection scheme that is well mixed by construction, with a CAPE-gated diagnostic scheme as a fallback for datasets that archive no fluxes.
 
@@ -44,9 +44,9 @@ julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
 
 - **Web interface** for building a configuration, launching the run and plotting the result.
 
-- **GPU, optionally.** Set `EASLEE_ADVANCE=ka_gpu` to move the particle advance onto the GPU; CUDA is installed only if you ask for it. Every run prints one line at startup stating whether the GPU is genuinely in use (`GPU backend enabled: <device>; CUDA initialized`) or not, and why — see `HOWTO.md` §1.3.
+- **GPU, optionally.** Set `EASLEE_ADVANCE=ka_gpu` to move the particle advance onto the GPU. CUDA is installed only if you ask for it. Every run prints one line at startup stating whether the GPU is genuinely in use (`GPU backend enabled: <device>; CUDA initialized`) or not, and why. See `HOWTO.md` §1.3.
 
-The model is evaluated against the **ETEX-1** and **CAPTEX-83** tracer experiments, for which EASLEE obtains composite ranks of **2.76** and **2.51** respectively, comparable to FLEXPART and other established LPDMs — see [docs/ETEX_RESULTS.md](docs/ETEX_RESULTS.md) and [docs/CAPTEX_RESULTS.md](docs/CAPTEX_RESULTS.md). It is also fast: the one-million-parcel, two-day ETEX-1 reference run completes in 12 min on 16 threads of a workstation, and in 5 min on its GPU ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
+The model is evaluated against the **ETEX-1** and **CAPTEX-83** tracer experiments, for which EASLEE obtains composite ranks of **2.76** and **2.51** respectively, comparable to FLEXPART and other established LPDMs. See [docs/ETEX_RESULTS.md](docs/ETEX_RESULTS.md) and [docs/CAPTEX_RESULTS.md](docs/CAPTEX_RESULTS.md). It is also fast: the one-million-parcel, two-day ETEX-1 reference run completes in 12 min on 16 threads of a workstation, and in 5 min on its GPU ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
 
 ## What is in the box
 
@@ -56,7 +56,7 @@ scripts/         easlee.jl (the entry point) and run_config.jl (lower-level runn
 configs/         example TOML run configs, including the WRF ones
 listvariables/   which variables to read from each meteorological dataset (<NAME>.vars)
 download/        scripts that fetch public meteorology (GFS, MERRA-2, ERA5 archives)
-data/            meteorology and validation observations (gitignored — see data/README.md)
+data/            meteorology and validation observations (gitignored, see data/README.md)
 docs/            reference documentation
 test/            self-contained tests (synthetic data, no meteorological archive needed)
 validation/      checks that need a real archive, plus CAPTEX/ETEX DATEM scoring
