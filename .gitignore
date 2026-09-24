@@ -12,3 +12,8 @@ data/*
 
 # LibreOffice lock files
 .~lock.*#
+
+# prepared meteorological archives and their tarballs (published via Zenodo, never committed)
+/ERA5_*/
+*.tar
+*.tar.gz
