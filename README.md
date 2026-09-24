@@ -75,7 +75,7 @@ julia --project=easlee test/runtests.jl                     # 42 tests, no data 
 
 EASLEE was written by **Jérôme Brioude**, with contributions from **Rémi Augerai**. The co-authors of the model description paper are warmly thanked for the discussions that shaped the model and for testing it on real cases.
 
-EASLEE stands in the lineage of **FLEXPART**, and follows its conventions closely enough that the debt should be stated plainly: the output-averaging semantics, the DATEM validation protocol and much of the physics vocabulary all come from there. The reader is referred to Stohl et al. (2005) for the physics and numerics inherited from FLEXPART.
+The reader is referred to Stohl et al. (2005) for the physics and numerics inherited from FLEXPART.
 
 ## Contact
 
