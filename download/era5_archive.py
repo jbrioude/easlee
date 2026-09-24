@@ -17,6 +17,7 @@ import os
 import sys
 import tarfile
 import urllib.request
+import shutil
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +39,25 @@ def read_links():
                 k, v = line.split("=", 1)
                 links[k.strip()] = v.strip().strip('"')
     return links
+
+
+def strip_top_level(out, keep):
+    """If the archive wrapped everything in one directory, lift its contents up.
+
+    `tar -cf a.tar DIR` stores DIR/... while `tar -cf a.tar -C DIR .` does not,
+    and we want the meteorology directly under `out` either way.  `keep` is the
+    downloaded archive, which must not be mistaken for the wrapper.
+    """
+    entries = [e for e in os.listdir(out) if os.path.join(out, e) != keep]
+    if len(entries) != 1:
+        return None
+    inner = os.path.join(out, entries[0])
+    if not os.path.isdir(inner):
+        return None
+    for name in os.listdir(inner):
+        shutil.move(os.path.join(inner, name), os.path.join(out, name))
+    os.rmdir(inner)
+    return entries[0]
 
 
 def main(argv=None):
@@ -71,6 +91,9 @@ def main(argv=None):
     else:
         with tarfile.open(arc) as t:
             t.extractall(out)
+    wrapper = strip_top_level(out, arc)
+    if wrapper:
+        print(f"lifted the contents of {wrapper}/ up into {out}")
     a.keep_archive or os.remove(arc)
     easlee_available.write_available(out, "ERA5", vars_)
     print(f"[[meteorology]]  model = \"ERA5\"  path = \"{out}\"  variables = \"{vars_}\"  available = \"auto\"")
