@@ -21,6 +21,13 @@ const FILTER = isempty(ARGS) ? "" : ARGS[1]
 tests = sort(filter(f -> startswith(f, "test_") && endswith(f, ".jl"),
                     readdir(HERE)))
 isempty(FILTER) || (tests = filter(t -> occursin(FILTER, t), tests))
+# Slow tests (10-45 min each) run only with EASLEE_SLOW_TESTS=1 (review 2026-09-23), so the
+# default suite and the CI finish in minutes.
+const SLOW = ("test_wellmixed_pbl.jl", "test_wellmixed_pbl_4d.jl", "test_wellmixed_thomson_4d.jl")
+if get(ENV, "EASLEE_SLOW_TESTS", "0") != "1" && isempty(FILTER)
+    skipped = filter(t -> t in SLOW, tests); tests = filter(t -> !(t in SLOW), tests)
+    isempty(skipped) || println("skipping slow tests (set EASLEE_SLOW_TESTS=1 to run them): ", join(skipped, ", "))
+end
 
 # review 2026-09-04 A6: Base.julia_cmd() carries no -t, so every test process
 # was single-threaded (test_wellmixed_pbl: 47 min).  Forward the thread count.

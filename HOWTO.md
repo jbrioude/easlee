@@ -9,7 +9,7 @@ include the reactive-chemistry module.
 Everything is driven by **one TOML file per run**. There is one entry point —
 you never edit a script.
 
-Meteorology supported here: **WRF**, ERA5, NCEP GFS, MERRA-2, AROME, MesoNH.
+Meteorology supported here: **WRF**, ERA5, NCEP GFS, MERRA-2, AROME (Météo-France NetCDF: `configs/arome_meteofrance.toml`; ATMO Hauts-de-France GRIB2: `configs/arome_hdf_france.toml`), MesoNH.
 Configs to start from live in [`configs/`](configs/):
 
 | file | what it is |
@@ -197,6 +197,23 @@ systemd-run --user --unit=easlee-wrf --collect \
 
 ---
 
+## 3b. Get meteorological data
+
+No archive at hand?  `download/` fetches public data and writes the `AVAILABLE` index the
+model needs, so the first run starts immediately:
+
+```bash
+python3 download/gfs.py --analysis 2026-06-03T00 --hours 48 --out ./data/GFS        # NCEP GFS, no account
+python3 download/merra2.py --start 2022-01-18 --end 2022-01-20 --out ./data/MERRA2  # MERRA-2, Earthdata account
+python3 download/era5_archive.py --dataset etex --out ./data/ERA5_ETEX              # ERA5 of the ETEX-1 case
+```
+
+then point `[[meteorology]]` at the directory (`model`, `path`, `variables`, `available =
+"auto"`); see `download/README.md`.  The GUI's **Data** tab does the same with a form and a
+**Use in config** button.  `available = "auto"` reuses `<path>/AVAILABLE` whenever it still
+matches the directory (files added/removed/resized trigger a rescan) and writes it after a
+scan; `available = "scan"` forces the scan.
+
 ## 4. Run from the web interface
 
 ```bash
@@ -216,6 +233,10 @@ Then open <http://localhost:8080>. Tabs:
 - **Figures** — column tracer, vertical cross-section, parcel positions and raw
   met fields, refreshed live as the run steps.
 - **Console** — a Julia REPL attached to the running model.
+- **Data** — download NCEP GFS (one analysis + forecast, or a date range of cycles and
+  steps), MERRA-2 (date range, Earthdata token) or a prepared ERA5 archive into a
+  directory, with the `AVAILABLE` index written; **Use in config** points the Config tab's
+  `[[meteorology]]` at it.  Needs `python3` (`EASLEE_PYTHON` to override).
 
 The GUI and the CLI drive the *same* engine from the *same* TOML — anything you
 build in the form runs identically with `scripts/easlee.jl`.

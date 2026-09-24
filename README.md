@@ -131,7 +131,7 @@ julia --project=easlee test/runtests.jl                     # 30 tests, no data 
 
 ## Authors and acknowledgements
 
-EASLEE was written by **Jérôme Brioude**, with contributions from **Remi
+EASLEE was written by **Jérôme Brioude**, with contributions from **Rémi
 Augerai**. The co-authors of the model description paper are warmly thanked for
 the discussions that shaped the model and for testing it on real cases.
 
@@ -142,9 +142,10 @@ come from there.
 
 ## Contact
 
-EASLEE is developed by **Jérôme Brioude** at the Laboratoire de l'Atmosphère et
-des Cyclones (LACy), Université de La Réunion. Questions about using the model,
-bug reports, and requests for the chemistry module are all welcome:
+EASLEE is developed at the Laboratoire de l'Atmosphère et des Cyclones (LACy,
+UMR 8105 CNRS, Université de La Réunion, Météo-France), Saint-Denis, La
+Réunion, France. Questions about using the model, bug reports, and requests for
+the chemistry module are all welcome:
 
 **jerome.brioude@univ-reunion.fr**
 

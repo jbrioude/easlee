@@ -1,8 +1,14 @@
-# Observation data for the validation runs
+# Data
 
-This directory is where EASLEE looks for the measurements used by the CAPTEX
-and ETEX validation runs. It ships empty: the tracer-experiment datasets are
-distributed by their own archives, not by us.
+This directory holds the data a run needs but the repository does not ship:
+meteorology you download, and the measurements the validation runs score
+against. Everything inside it is gitignored except this file, so nothing here
+can be committed by accident.
+
+## Validation observations
+
+The measurements used by the CAPTEX and ETEX validation runs go here. They ship
+separately, distributed by their own archives rather than by us.
 
 ```
 data/ETEX/      emit-t1.txt, meas-t1.txt, stations.txt
@@ -32,6 +38,12 @@ relative to the top of the repository, so start runs from there — or edit
 `[validation] obs_dir` and `[output.receptors] file` to give an absolute path
 of your own.
 
-Note that the observations are only half of what a validation run needs: the
-meteorological archive that drives the run is separate again, and is set by
-`[meteorology] path` in each config. See [../HOWTO.md](../HOWTO.md).
+## Meteorology
+
+The scripts in [`../download/`](../download/README.md) fetch public
+meteorological data (GFS, MERRA-2, prepared ERA5 archives) and write it here by
+default — `data/GFS`, `data/MERRA2`, and so on. Point `[meteorology] path` at
+whichever directory you used. These files are large, which is the other reason
+this directory is gitignored.
+
+See [../HOWTO.md](../HOWTO.md) for how the two fit together in a run.

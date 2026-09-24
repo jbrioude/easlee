@@ -171,3 +171,22 @@ Backward (`test_backward_srr.jl`):
 - mixing-ratio sensitivity equals `Σ sens·V` divided through by air density
   (cell-by-cell), i.e. `sens_mr = sens/ρ`;
 - parcels move UPWIND (footprint extends opposite the mean flow).
+
+## Axis registration — cell CENTRES (2026-09-24)
+
+Both NetCDF writers store the horizontal axes at the **cell centres**:
+`longitude[i] = lon0 + dlon·(i − ½)` in the single-frame writer (`io/output.jl`,
+`initnetcdf!`, variables `longitude`/`latitude`, also `lon2d`/`lat2d` on a native CRS) and
+`lon[i] = lon0 + (i − ½)·dlon` in the time-framed writer (`output/chemconc.jl`, `lon`/`lat`).
+`lon0`/`lat0` in the config remain the grid's south-west corner; cell i spans
+`[lon0 + dlon·(i−1), lon0 + dlon·i]`. Until 2026-09-24 the single-frame writer stored the
+west/south EDGES, and every bilinear reader that took the axis values as nodes sampled half
+a cell to the south-west (the CAPTEX validation, paper Table 3). Files written before that
+date by `initnetcdf!` need `+ dlon/2` before sampling; the time-framed files never did.
+
+## Backward runs and convection (2026-09-24)
+
+The mass-flux scheme applies the ADJOINT of its forward kernel in backward runs
+(`physics/convection.jl`: reversed subsidence, then reversed conveyor — the mass-weighted
+transpose, `test/test_convection_adjoint.jl`). The `cape` scheme mixes toward uniform and is
+its own adjoint.

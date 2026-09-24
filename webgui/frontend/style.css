@@ -448,3 +448,18 @@ button:hover { background: var(--border); }
    background: var(--bg1); border-top: 1px solid var(--border); }
 .modal-foot input { flex: 1; background: var(--bg3); border: 1px solid var(--border);
    border-radius: 4px; padding: 5px 8px; color: var(--fg0); font-family: var(--mono); font-size: 11px; }
+
+/* ── Data tab (meteorology download) ─────────────────────────────────────── */
+.dl-panel { display: flex; flex: 1; overflow: hidden; }
+.dl-form  { flex: 0 0 420px; padding: 14px 18px; overflow-y: auto; border-right: 1px solid var(--bg3); }
+.dl-form h3 { margin: 0 0 6px 0; }
+.dl-form label { display: block; margin: 8px 0 4px; font-size: 0.9em; }
+.dl-form input[type=text], .dl-form input[type=password], .dl-form input[type=date],
+.dl-form input[type=datetime-local], .dl-form input[type=number], .dl-form select {
+  width: 100%; box-sizing: border-box; margin-top: 3px; }
+.dl-path { display: flex; gap: 4px; }
+.dl-path input { flex: 1; }
+.dl-buttons { margin-top: 12px; display: flex; gap: 8px; }
+.dl-help { font-size: 0.82em; opacity: 0.8; margin: 4px 0; }
+.dl-log { flex: 1; overflow-y: auto; background: var(--bg0); padding: 8px 12px; }
+.dl-log pre { margin: 0; font-size: 0.82em; white-space: pre-wrap; }

@@ -83,12 +83,21 @@ sampling-window, zeros included). Driver: `validation/validate_captex.jl`
   the weakest of the set; excluding it lifts the pooled R to 0.48 but barely moves
   RANK (the composite is robust to one bad release).
 
-## Backward / adjoint (qualitative)
+## Backward / adjoint
 
-Backward (source–receptor) runs from the strongest receptors, convolving the SRR
-with the emissions, reproduce the forward signal with correlation R ≈ 0.65; the
-absolute backward magnitude needs an ~2.2× calibration factor against the forward
-run (documented as a TODO — verify the SRR absolute scaling). Per-receptor outputs
+Backward (source–receptor) runs from the strongest receptors, convolved with the
+emissions, reproduce the forward signal (release 2: r ≈ 0.7 over the 8 strongest
+receptor-windows of stations 318 and 316, ΣB/ΣF = 1.23; at the peak windows the backward
+value is 1.19× the forward one). **The "~2.2×/3.3× calibration factor" reported before
+2026-09-24 was a convolution error, not a model property**: the sensitivity was summed
+over the whole backward run and multiplied by the 3-h emission rate, so residence over
+the source at times when nothing was emitted counted as emission (`run_backward` in
+`validate_captex_run.jl`, and `scripts/v1figs/fig_captex_fwdbwd.jl` behind paper
+Fig. 6c). The Seibert & Frank (2004) convolution restricts each backward frame to its
+overlap with the release window; both drivers now do that. What remains is a ~2 h
+travel-time offset (backward faster) that makes the window-by-window comparison poor at
+the plume edges — see `docs/FWDBWD_CONSISTENCY_2026-09-24.md` for the reproduction
+(`scripts/captex_fwdbwd_check.jl`) and the single-factor variants. Per-receptor outputs
 under `results/captex_bwd_*`.
 
 ## Files

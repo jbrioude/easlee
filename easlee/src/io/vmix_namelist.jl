@@ -28,7 +28,7 @@
 const _VMIX_HANNA_FILL_MODELS = ("ERA5", "GFS", "MERRA2", "AROME_HDF")
 
 """
-    vmix_from_namelist(input, tke_mapped, kz_mapped) -> (native_e::Bool, r_w::Float32, c_k::Float32, kz_arch::Bool)
+    vmix_from_namelist(input, tke_mapped, kz_mapped) -> (native_e::Bool, r_w::Float32, c_k::Float32)
 
 Select the vertical-mixing closure for one met source from its parsed variables
 namelist (`input` — the Dict filled by extract_variables! with the #info keys),
@@ -45,21 +45,11 @@ function vmix_from_namelist(input, tke_mapped::Bool, kz_mapped::Bool)
     kind  = lowercase(strip(string(get(input, "tke_kind", ""))))
 
     # ── Hanna-fill drivers / no archived tke: field ≡ 0.5·σ_w,H² ─────────────
-    # ── Archived K_z (ERA5 avg_tdch) ────────────────────────────────────────
-    # The driver maps its own vertical diffusion coefficient into the tke slot
-    # and declares `tke_kind = kz`.  kz_fill_tke! converts it to the Hanna
-    # (tke, tls) convention at read time, so the transport kernels are unchanged.
-    if kind == "kz"
-        tke_mapped || error(
-            "vertical mixing: tke_kind = kz needs the diffusivity mapped into the " *
-            "tke slot (e.g. `tke = avg_tdch` for ERA5) — nothing is mapped")
-        return (false, NaN32, NaN32, true)
-    end
     if model in _VMIX_HANNA_FILL_MODELS || !tke_mapped
         kind in ("", "hanna", "sigw2") || error(
             "vertical mixing: model=$model is on the Hanna-fill path (tke = 0.5·σ_w²)" *
             " but the namelist declares tke_kind=$kind — remove it or fix the model entry")
-        return (false, NaN32, NaN32, false)
+        return (false, NaN32, NaN32)
     end
 
     # ── WRF native TKE trap ───────────────────────────────────────────────────
@@ -97,5 +87,5 @@ function vmix_from_namelist(input, tke_mapped::Bool, kz_mapped::Bool)
     (ck !== nothing && ck > 0.0f0) || error(
         "vertical mixing: model=$model with tke_kind=e needs vmix_ck > 0 " *
         "(CBR scalar diffusivity constant, K_z = C_K·ℓ·√e) in the namelist #info block")
-    return (true, rw, ck, false)
+    return (true, rw, ck)
 end

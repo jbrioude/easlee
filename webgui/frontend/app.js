@@ -332,3 +332,82 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(pollState, 1000);
   updateFigure();
 });
+
+// ── Data tab: meteorology download (POST /api/met/download, download/*.py) ─────────
+const DL_VARS = { GFS: 'GFS', MERRA2: 'MERRA2', ERA5: 'ERA5_CONV' };
+let dlTimer = null;
+function dlModelChanged() {
+  const m = document.getElementById('dl-model').value;
+  document.getElementById('dl-gfs').style.display    = m === 'GFS'    ? '' : 'none';
+  document.getElementById('dl-merra2').style.display = m === 'MERRA2' ? '' : 'none';
+  document.getElementById('dl-era5').style.display   = m === 'ERA5'   ? '' : 'none';
+  const out = document.getElementById('dl-out');
+  if (!out.value || /^\.\/data\/(GFS|MERRA2|ERA5_ETEX|ERA5_CAPTEX)$/.test(out.value))
+    out.value = m === 'ERA5' ? './data/ERA5_' + document.getElementById('dl-dataset').value.toUpperCase() : './data/' + m;
+}
+function dlModeChanged() {
+  const r = document.getElementById('dl-mode').value === 'range';
+  document.getElementById('dl-gfs-forecast').style.display = r ? 'none' : '';
+  document.getElementById('dl-gfs-range').style.display    = r ? '' : 'none';
+}
+function dlRequest() {
+  const m = document.getElementById('dl-model').value;
+  const b = { model: m, out: document.getElementById('dl-out').value.trim() };
+  if (m === 'GFS') {
+    b.mode = document.getElementById('dl-mode').value; b.res = document.getElementById('dl-res').value;
+    if (b.mode === 'forecast') {
+      const a = document.getElementById('dl-analysis').value;          // "YYYY-MM-DDTHH:MM"
+      b.analysis = a ? a.slice(0, 13) : ''; b.hours = document.getElementById('dl-hours').value;
+    } else {
+      b.start = document.getElementById('dl-start').value; b.end = document.getElementById('dl-end').value || b.start;
+      b.cycles = document.getElementById('dl-cycles').value; b.steps = document.getElementById('dl-steps').value;
+    }
+  } else if (m === 'MERRA2') {
+    b.start = document.getElementById('dl-m2-start').value; b.end = document.getElementById('dl-m2-end').value || b.start;
+    b.token = document.getElementById('dl-token').value;
+  } else {
+    b.dataset = document.getElementById('dl-dataset').value; b.url = document.getElementById('dl-url').value.trim();
+  }
+  return b;
+}
+async function dlStart() {
+  const b = dlRequest();
+  if (!b.out) { alert('Give a target directory.'); return; }
+  const res = await fetch('/api/met/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const j = await res.json();
+  if (!j.ok) { alert('Error: ' + (j.msg || 'unknown')); return; }
+  document.getElementById('dl-status').textContent = 'running: ' + j.cmd;
+  dlPoll();
+}
+async function dlCancel() {
+  await fetch('/api/met/download/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+}
+async function dlPoll() {
+  let s; try { s = await (await fetch('/api/met/download/status')).json(); } catch { return; }
+  const pre = document.getElementById('dl-log-output');
+  if (pre) { pre.textContent = (s.log || []).join('\n'); pre.parentElement.scrollTop = 99999; }
+  document.getElementById('dl-start-btn').disabled  = !!s.running;
+  document.getElementById('dl-cancel-btn').disabled = !s.running;
+  document.getElementById('dl-apply-btn').disabled  = !(s.exit === 0 && s.out);
+  const st = document.getElementById('dl-status');
+  if (!s.scripts) st.textContent = 'download scripts not found next to the GUI (download/ directory)';
+  else if (s.running) st.textContent = 'running: ' + s.cmd;
+  else if (s.exit === 0) st.textContent = 'done — ' + s.out + ' (AVAILABLE index written)';
+  else if (s.exit !== null && s.exit !== undefined) st.textContent = 'stopped (exit ' + s.exit + ')';
+  clearTimeout(dlTimer);
+  if (s.running) dlTimer = setTimeout(dlPoll, 1000);
+}
+// Point [[meteorology]] of the Config tab at the downloaded directory.
+async function dlApplyToConfig() {
+  let s; try { s = await (await fetch('/api/met/download/status')).json(); } catch { return; }
+  if (!(s.exit === 0 && s.out)) return;
+  let cfg = {}; try { cfg = await (await fetch('/api/config')).json(); } catch {}
+  if (!cfg || typeof cfg !== 'object') cfg = {};
+  const met = { model: s.model, path: s.out, variables: DL_VARS[s.model] || s.model, available: 'auto' };
+  cfg.meteorology = [Object.assign({}, (cfg.meteorology && cfg.meteorology[0]) || {}, met)];
+  const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+  const j = await res.json();
+  if (!j.ok) { alert('Error: ' + (j.msg || 'unknown')); return; }
+  if (window.loadSchemaForm) await window.loadSchemaForm();
+  switchTab('config');
+}

@@ -28,8 +28,8 @@ Field(path, type, default, group, help; unit="", options=String[], visible_if=""
 function schema_fields()::Vector{Field}
     F = Field[]
     push!(F, Field("name", "string", "easlee_run", "Run", "Run name (output file prefix)"))
-    push!(F, Field("task", "enum", "transport", "Run", "What to run: plain transport, domain-fill chemistry vs CAMS, or DATEM validation";
-                   options=["transport","chemistry","validation"]))
+    push!(F, Field("task", "enum", "transport", "Run", "What to run: plain transport or DATEM validation (the chemistry task is not part of this distribution)";
+                   options=["transport","validation"]))
     push!(F, Field("run.direction", "enum", "forward", "Run", "Integration direction"; options=["forward","backward"]))
     push!(F, Field("run.start", "datetime", "", "Run", "Simulation start (UTC)"))
     push!(F, Field("run.stop",  "datetime", "", "Run", "Simulation stop (UTC)"))
@@ -37,6 +37,7 @@ function schema_fields()::Vector{Field}
     push!(F, Field("run.wind", "enum", "3D", "Run", "Wind dimensionality: 2D/1D freeze parcel motion along the dropped axes (the frozen index stays at its release value) — reduced-dimension transport studies";
                    options=["3D","2D-lonlat","2D-latalt","2D-lonalt","1D-vertical"]))
     push!(F, Field("run.benchmark", "bool", false, "Run", "Per-group @time-style timing report at run end"))
+    push!(F, Field("run.seed", "int", 0, "Run", "Random seed (Random.seed! at run start; 0 = unseeded). Bit-for-bit reproducibility also needs the same thread count and the same advance backend"))
     push!(F, Field("run.checkpoint", "string", "", "Run", "Warm-start checkpoint: \"end\" = save the full parcel/chemistry state at run end; a duration (e.g. \"6h\") also saves periodically — resume later with run.restart instead of re-simulating"))
     push!(F, Field("run.restart", "string", "", "Run", "Path to a checkpoint file: resume the run from the saved step (same config, later stop; output files get an _r suffix)"))
     push!(F, Field("run.parcel_dump", "string", "", "Run", "Per-parcel diagnostic snapshots: a duration (e.g. \"3h\") writes parcel + convert-gate state and flux accumulators to <output.path>/snapshots/ at that cadence; \"\" = off. Diagnostic only, never read back by the model"))
@@ -48,7 +49,7 @@ function schema_fields()::Vector{Field}
                    options=["ERA5","MERRA2","GFS","AROME_HDF","MESONH","WRF","AROME"]))
     push!(F, Field("meteorology[].path", "string", "", "Meteorology", "Directory of met files"))
     push!(F, Field("meteorology[].variables", "string", "", "Meteorology", "Variables namelist (listvariables/<name>.vars)"))
-    push!(F, Field("meteorology[].available", "string", "auto", "Meteorology", "AVAILABLE file, or 'auto' to scan the path"))
+    push!(F, Field("meteorology[].available", "string", "auto", "Meteorology", "AVAILABLE file path; 'auto' = use <path>/AVAILABLE when present and up to date (written by download/*.py or by an earlier run), else scan the path and write it; 'scan' = always rescan"))
     push!(F, Field("meteorology[].crop", "string", "auto", "Meteorology", "Domain crop: 'auto' (crop to the domainfill box + 2 cells; exact — the cull keeps parcels inside), 'off', or [lon0, lon1, lat0, lat1] (any run; parcels are terminated at the crop edge)"))
     push!(F, Field("meteorology[].max_gap", "string", "6h", "Meteorology", "Refuse to run when the met archive has a coverage gap larger than this inside the run window (a missing file, not an intended overrun); 0 = disable the guard"; unit="duration"))   # review 2026-09-04 A7 item 6
 

@@ -1,0 +1,18 @@
+# EASLEE transport distribution — CI (review 2026-09-23): the self-contained suite on Julia 1.10 and 1.12.
+name: tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1.10", "1.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - run: julia --project=easlee -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+      - run: julia -t 4 --project=easlee test/runtests.jl

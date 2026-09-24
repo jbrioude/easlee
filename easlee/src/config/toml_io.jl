@@ -47,6 +47,7 @@ function dict_to_runspec(d::AbstractDict)::RunSpec
     haskey(run, "stop")  && (s.stop  = _asdt(run["stop"]))
     s.timestep_s = _durget(run, "timestep", s.timestep_s)
     s.benchmark = Bool(_get(run, "benchmark", false))
+    s.seed      = Int(_get(run, "seed", 0))
     s.checkpoint = String(_get(run, "checkpoint", ""))
     s.restart    = String(_get(run, "restart", ""))
     s.parcel_dump = String(_get(run, "parcel_dump", ""))

@@ -1,11 +1,38 @@
 # EASLEE transport distribution — changes
 
+## 2026-09-23 — pre-release review fixes
+
+- **Web GUI security.** The server binds to `127.0.0.1` (override with `EASLEE_GUI_HOST`);
+  every POST route refuses requests without `Content-Type: application/json` or with a
+  non-local `Host`; the Julia console (`/api/eval`) is disabled unless the GUI is started
+  with `EASLEE_GUI_REPL=1`. The Chemistry section is no longer offered by the GUI schema.
+- **`[run].seed`** (`Random.seed!` at run start; 0 = unseeded). Reproducible bit for bit for
+  the same thread count and advance backend (`docs/CONFIG.md`).
+- **Chemistry leftovers refused at validation**: `task = "chemistry"`, `[chemistry] enabled
+  = true` and `[chemistry.emissions]` now fail in `validate_runspec` with the sentence that
+  names the missing module, instead of an `UndefVarError` during the run; the task enum
+  offers `transport` and `validation` only.
+- **Tests**: the three tests that write into the gitignored `results/` create it;
+  `test_point_source_mixing.jl` and `test_two_puff_mixing.jl` now assert (conservation and
+  totals within tolerance) instead of only printing; the three slow well-mixed tests
+  (10–45 min each) run only with `EASLEE_SLOW_TESTS=1`, so the default suite is 35 tests
+  in minutes; `.gitlab-ci.yml` and `.github/workflows/ci.yml` run it on Julia 1.10 and 1.12.
+- **Suite green again after the GPU port**: `test_v11_transport_ports.jl` expected the
+  retired "horizontal_tke is CPU-only" refusal and the old unsupported-switch list (now it
+  checks the explicit-backend refusal instead); `io/vmix_namelist.jl` stays this
+  distribution's 3-tuple reader (the developer tree's 4-tuple Kz variant had been copied in
+  and broke `test_vertical_mixing_c.jl`).
+- **Metadata**: personal path removed from `configs/arome_hdf_france.toml`; README test count;
+  `CITATION.cff` date and a `repository-code` placeholder to fill with the GitLab URL (and the
+  Zenodo DOI after the first release); note in `docs/CONFIG.md` that checkpoints use Julia's
+  `Serialization` and must be resumed with the Julia version that wrote them.
+
 ## 2026-09-23 — GPU/KA advance: the last threads-only switches ported, two kernel bugs fixed, switches passed as types
 
 Ported from the developer tree (commits a0d6026, 7fd48d0, 4345524, 2bdf8f8, 77e0d3f,
 8a12d39, 0e46fe6; chemistry left out).  Files: `physics/advance_ka.jl`,
 `physics/advance_ka_gpu.jl`, `physics/turbulence_4d.jl`, `physics/turbulence_hanna.jl`,
-`physics/advance.jl`, `met/interp.jl`, `io/vmix_namelist.jl`, `core/operators.jl`,
+`physics/advance.jl`, `met/interp.jl`, `core/operators.jl`,
 `core/config.jl`, `types/config.jl`, `config/{runspec,schema,toml_io}.jl`, `build_run.jl`.
 
 - **`[physics.turbulence] horizontal_hanna`** (new): Hanna (1982) horizontal Langevin
@@ -256,3 +283,40 @@ Physics and numerics (transport results change only where noted)
 Every item above was re-read in the source and, where numeric, reproduced
 with a small script before being fixed.
 in the developer tree.
+
+## 2026-09-24 — validation drivers: forward/backward consistency
+
+- `validation/validate_captex_run.jl`: the backward convolution now restricts each
+  sensitivity frame to its overlap with the release window (Seibert & Frank 2004); the
+  previous whole-run integral × emission rate overestimated the backward concentration
+  ~3× at CAPTEX release 2. The time loop starts at the run-start step (the first release
+  step was skipped, 1/13 of the mass), and stations are sampled at the cell centres
+  (the single-frame NetCDF axis holds the cell edges). No model change.
+- `docs/CAPTEX_RESULTS.md`: backward section rewritten accordingly.
+
+## 2026-09-24 — output axis at cell centres; adjoint convection in backward runs
+
+- `easlee/src/io/output.jl`, `easlee/src/io/initialize.jl`: the single-frame NetCDF axes
+  (`longitude`/`latitude`, `lon2d`/`lat2d`) are now the CELL CENTRES (`lon0 + dlon·(i−½)`),
+  as in the time-framed writer; before they were the west/south edges and bilinear readers
+  sampled half a cell off. Readers of older files: add half a cell.
+- `easlee/src/physics/convection.jl`: backward runs apply the adjoint (mass-weighted
+  transpose) of the mass-flux kernel instead of the forward kernel; the per-parcel kernel is
+  now `_convect_column(rng, k0, …, backward)`; `test/test_convection_adjoint.jl` (5 checks).
+- `docs/OUTPUT_GRID.md` updated.
+
+## 2026-09-24 — data download tools, pre-generated AVAILABLE index, GUI Data tab, AROME configs
+
+- `download/`: `gfs.py` (NOMADS + NOAA/AWS archive, analysis+forecast or date range),
+  `merra2.py` (GES DISC, Earthdata token/netrc), `era5_archive.py` (prepared ETEX/CAPTEX
+  archives, links in `links.toml`), `easlee_available.py` (index writer).  Standard-library
+  Python 3.  Every script writes `<dir>/AVAILABLE` + `AVAILABLE.files`.
+- Model: `[meteorology].available = "auto"` first uses `<path>/AVAILABLE` when it still
+  describes the directory (sidecar file list + sizes, or no newer file), else scans and
+  writes the index there for the next run; `"scan"` forces a rescan
+  (`io/met_scan.jl`, `build_run.jl _resolve_available`, `test/test_available_cache.jl`).
+  Measured: 0.3 s instead of a 21 s scan on a 26-file ERA5 day.
+- GUI: **Data** tab (`POST /api/met/download`, `/status`, `/cancel`) runs the scripts and
+  can set `[[meteorology]]` of the Config tab to the downloaded directory.
+- Configs: `arome_meteofrance.toml` (native Météo-France NetCDF, model `AROME`) added
+  beside `arome_hdf_france.toml` (ATMO Hauts-de-France GRIB2, model `AROME_HDF`).

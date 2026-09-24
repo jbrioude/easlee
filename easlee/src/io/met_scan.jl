@@ -179,3 +179,109 @@ function write_available!(path::AbstractString, entries, variablesfile::Abstract
     end
     return path
 end
+
+# ── Pre-generated AVAILABLE in the met directory (2026-09-24) ─────────────────────
+# `[meteorology].available = "auto"` first looks for <path>/AVAILABLE — written by the
+# download tools (download/*.py) or by a previous run — and uses it when it still
+# describes what is on disk; otherwise the directory is scanned and the index written
+# there for the next run.  "scan" forces a rescan.  Line 1 (the variables namelist)
+# is rewritten with the run's own namelist when the index is copied into the work dir.
+const AVAILABLE_INDEX_NAME = "AVAILABLE"
+
+# The MAIN met files of a directory (the same filter as scan_met_directory), as paths
+# relative to `directory`.
+function list_main_met_files(directory::AbstractString; include_only::Vector{Regex}=Regex[],
+                             exclude::Vector{Regex}=Regex[], recursive::Bool=true)
+    files = String[]
+    if recursive
+        for (root, _, fs) in walkdir(directory), f in fs
+            push!(files, joinpath(root, f))
+        end
+    else
+        append!(files, readdir(directory; join=true))
+    end
+    out = String[]
+    for f in files
+        b = basename(f)
+        isfile(f) || continue
+        occursin(r"AVAILABLE|\.vars$|\.txt$|README|\.pdf$|\.part$|\.toml$"i, b) && continue
+        isempty(include_only) || any(p -> occursin(p, b), include_only) || continue
+        any(p -> occursin(p, b), exclude) && continue
+        push!(out, relpath(f, directory))
+    end
+    return sort!(out)
+end
+
+# (date, relative path) entries of an AVAILABLE file (line 1 = namelist, 2-3 = header).
+function read_available_entries(path::AbstractString)
+    entries = Tuple{DateTime,String}[]
+    for (k, line) in enumerate(eachline(path))
+        k <= 3 && continue
+        s = split(line)
+        length(s) >= 3 || continue
+        m = match(r"^\d{8}$", s[1]); m === nothing && continue
+        push!(entries, (DateTime(s[1] * s[2], dateformat"yyyymmddHHMMSS"), String(s[3])))
+    end
+    return entries
+end
+
+# Sidecar <index>.files: the MAIN files (relative path, size) the index was built from.
+# Written next to the index by the model and by download/easlee_available.py; it is what
+# makes the validity check exact for archives whose overlapping cycles leave some files
+# out of the index (the scanner keeps the freshest cycle per valid time).
+sidecar_path(index::AbstractString) = index * ".files"
+function write_available_sidecar!(index::AbstractString, metdir::AbstractString;
+                                  include_only::Vector{Regex}=Regex[], exclude::Vector{Regex}=Regex[])
+    open(sidecar_path(index), "w") do io
+        for f in list_main_met_files(metdir; include_only=include_only, exclude=exclude)
+            println(io, f, "\t", filesize(joinpath(metdir, f)))
+        end
+    end
+end
+_read_sidecar(path) = [(String(split(l, '\t')[1]), parse(Int, split(l, '\t')[2])) for l in eachline(path) if occursin('\t', l)]
+
+# Does the pre-generated index still describe the directory?  Every listed file must
+# exist and be non-empty; then, with a sidecar, the MAIN files on disk (names and sizes)
+# must be exactly those recorded; without one, no main file may be newer than the index.
+# Returns (ok, reason).
+function cached_available_ok(index::AbstractString, metdir::AbstractString;
+                             include_only::Vector{Regex}=Regex[], exclude::Vector{Regex}=Regex[])
+    isfile(index) || return false, "no $(basename(index)) in $metdir"
+    entries = read_available_entries(index)
+    isempty(entries) && return false, "$(basename(index)) lists no files"
+    listed = unique!(sort!([normpath(f) for (_, f) in entries]))
+    for f in listed
+        p = joinpath(metdir, f)
+        isfile(p) || return false, "listed file missing: $f"
+        filesize(p) > 0 || return false, "listed file is empty: $f"
+    end
+    ondisk = list_main_met_files(metdir; include_only=include_only, exclude=exclude)
+    sc = sidecar_path(index)
+    if isfile(sc)
+        rec = _read_sidecar(sc)
+        now = [(f, filesize(joinpath(metdir, f))) for f in ondisk]
+        if now != rec
+            added = setdiff(first.(now), first.(rec)); gone = setdiff(first.(rec), first.(now))
+            why = !isempty(added) ? "$(length(added)) file(s) added (e.g. $(first(added)))" :
+                  !isempty(gone)  ? "$(length(gone)) file(s) removed (e.g. $(first(gone)))" :
+                                    "file sizes changed"
+            return false, why
+        end
+    else
+        tidx = mtime(index)
+        newer = filter(f -> mtime(joinpath(metdir, f)) > tidx, ondisk)
+        isempty(newer) || return false, "$(length(newer)) file(s) newer than the index (e.g. $(first(newer))); no $(basename(sc)) sidecar"
+    end
+    return true, "$(length(entries)) time steps, $(first(entries)[1]) → $(last(entries)[1])"
+end
+
+# Copy an index into the work dir with line 1 replaced by the run's variables namelist.
+function copy_available_with_vars(src::AbstractString, dst::AbstractString, varsfile::AbstractString)
+    lines = readlines(src)
+    isempty(lines) && error("empty AVAILABLE: $src")
+    lines[1] = String(varsfile)
+    open(dst, "w") do io
+        foreach(l -> println(io, l), lines)
+    end
+    return dst
+end

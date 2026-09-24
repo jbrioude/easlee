@@ -233,6 +233,22 @@ println("  Σqm = total tracer mass Σᵢ qᵢ·mᵢ")
 # ─────────────────────────────────────────────────────────────────────────────
 # Figure (optional — numeric checks above are complete)
 # ─────────────────────────────────────────────────────────────────────────────
+# ── assertions (review 2026-09-23: the test printed a table and always passed) ──
+# The peer-to-peer schemes conserve the sum of mixing ratios exactly; the puff scheme
+# dilutes into the background by design, so its Σq drifts — bounded here as a regression
+# guard on the values recorded on 2026-09-23 (1.070 at 30 min).
+nfail = 0
+for step in SNAP_STEPS
+    for (lab, sn) in (("OLD3", snaps_old3[step]), ("OLD2", snaps_old2[step]))
+        abs(sn.sumq - Q0) < 1e-6 || (global nfail += 1; println("FAIL: $lab Σq = $(sn.sumq) at step $step (expected $Q0)"))
+    end
+    nw = snaps_new[step]
+    (isfinite(nw.sumq) && Q0 <= nw.sumq < 1.10 * Q0) || (global nfail += 1; println("FAIL: NEW Σq = $(nw.sumq) at step $step (expected within [1, 1.10] × Q0)"))
+    (isfinite(nw.sumqm) && nw.sumqm > 0) || (global nfail += 1; println("FAIL: NEW Σqm not finite/positive at step $step"))
+end
+println(nfail == 0 ? "ALL PASS (point-source mixing: $(length(SNAP_STEPS)) snapshots checked)" : "FAIL: $nfail checks")
+nfail == 0 || exit(1)
+
 SAVE_PLOT || exit(0)
 
 colors_steps = [:grey70, :dodgerblue, :steelblue, :royalblue, :navy]
@@ -341,7 +357,7 @@ scatter!(ax7, t_steps, q_ctr2./Q0; color=:dodgerblue, markersize=7)
 axislegend(ax7; position=:rt, labelsize=10)
 
 # ─────────────────────────────────────────────────────────────────────────────
-outpath = joinpath(REPO, "results", "point_source_mixing.png")
+outpath = joinpath(REPO, "results", "point_source_mixing.png"); mkpath(dirname(outpath))
 mkpath(dirname(outpath))
 save(outpath, fig; px_per_unit=2)
 println("Saved → $outpath")

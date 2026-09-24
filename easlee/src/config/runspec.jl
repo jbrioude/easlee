@@ -735,6 +735,7 @@ Base.@kwdef mutable struct RunSpec
     stop::DateTime = DateTime(2000,1,1,1)
     timestep_s::Float64 = 900.0
     benchmark::Bool = false             # per-group @time-style timing report
+    seed::Int = 0                       # [run].seed: Random.seed! at run start (0 = unseeded)
     meteorology::Vector{MetSource} = MetSource[]
     species::Vector{Species} = Species[]
     release::Vector{ReleaseBox} = ReleaseBox[]
@@ -983,6 +984,13 @@ function validate_runspec(s::RunSpec; check_paths::Bool=true)
     (length(s.physics.windbias_z) == 2 && s.physics.windbias_z[1] < s.physics.windbias_z[2]) ||
         push!(errs, "physics.wind_bias z must be [z_bottom, z_top] with z_bottom < z_top")
 
+    # This distribution has no reactive-chemistry module (review 2026-09-23): refuse the
+    # chemistry task, chemistry.enabled and chemistry.emissions here, with the same sentence
+    # build_run uses, instead of failing later with an UndefVarError.
+    _NOCHEM = "the reactive-chemistry module is not included in this EASLEE distribution (transport + aerosol only)"
+    s.task == "chemistry" && push!(errs, "task = \"chemistry\": $_NOCHEM")
+    s.chemistry.enabled && push!(errs, "[chemistry] enabled = true: $_NOCHEM — remove the [chemistry] block or set enabled = false")
+    isempty(s.chemistry.emissions_dir) || push!(errs, "[chemistry.emissions]: $_NOCHEM — the emission inventories are read by that module")
     s.task == "chemistry" && !s.chemistry.enabled &&
         push!(errs, "task=\"chemistry\" needs a [chemistry] block (enabled = true) — it is the domain-fill chemistry comparison run")
 

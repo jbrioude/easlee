@@ -1,4 +1,8 @@
-# Météo-France AROME 0.025° ATMO-HDF dissemination (GRIB2, height-AGL levels,
+# AROME as distributed by the air-quality agency ATMO Hauts-de-France: GRIB2 extract on
+# a 0.025° lon-lat grid, height-AGL levels, boundary-layer only (model top 3 km).  This is
+# NOT the native Météo-France NetCDF dissemination — for that one use
+# configs/arome_meteofrance.toml (model = "AROME").
+# (GRIB2, height-AGL levels,
 # boundary-layer only — model top 3 km).  Run 2025-09-04 03Z, hourly steps.
 # HP1 = 3D height-level fields (primary); SP1/SP2/SP3 = surface companions.
 # NB: this dataset carries NO vertical velocity → vertical transport is
@@ -8,7 +12,7 @@ name = "arome_hdf_france"
 [[meteorology]]
 available = "auto"
 model     = "AROME_HDF"
-path      = "/home/jbrioude/Desktop/julia/AROME_nath/GRIB2/"
+path      = "/path/to/AROME/GRIB2/"        # <- set to your AROME archive (see HOWTO.md)
 variables = "AROME_HDF"
 
 [run]

@@ -1,0 +1,20 @@
+# EASLEE transport distribution — CI (review 2026-09-23)
+# Runs the self-contained test suite (no meteorological archive needed) on the two
+# Julia versions the README promises.  Slow tests are excluded (EASLEE_SLOW_TESTS=1 to add them).
+stages: [test]
+.julia_test: &julia_test
+  stage: test
+  script:
+    - julia --project=easlee -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+    - julia -t 4 --project=easlee test/runtests.jl
+  cache:
+    key: julia-depot-$CI_JOB_NAME
+    paths: [.julia/]
+  variables:
+    JULIA_DEPOT_PATH: "$CI_PROJECT_DIR/.julia"
+test-julia-1.10:
+  <<: *julia_test
+  image: julia:1.10
+test-julia-1.12:
+  <<: *julia_test
+  image: julia:1.12

@@ -55,6 +55,7 @@
     <div class="tab active" data-tab="config"  onclick="switchTab('config')">Config</div>
     <div class="tab"        data-tab="figures" onclick="switchTab('figures')">Figures</div>
     <div class="tab"        data-tab="console" onclick="switchTab('console')">Console</div>
+    <div class="tab"        data-tab="data"    onclick="switchTab('data'); dlPoll()">Data</div>
   </div>
 
   <!-- ── Tab: Config (schema-driven, auto-generated from /api/schema) ───────── -->
@@ -124,6 +125,63 @@
     </div>
     <div id="fig-container">
       <img id="fig-img" alt="No data yet — run the model first">
+    </div>
+  </div>
+
+
+  <!-- ── Tab: Data (download public meteorology, download/*.py) ─────────────── -->
+  <div id="tab-data" class="tab-content">
+    <div class="dl-panel">
+      <div class="dl-form">
+        <h3>Get meteorological data</h3>
+        <p class="dl-help">Downloads public meteorology into a directory and writes its
+          <code>AVAILABLE</code> index, so a run on it starts without scanning. The same
+          scripts work from the command line (<code>download/</code>).</p>
+        <label>Dataset
+          <select id="dl-model" onchange="dlModelChanged()">
+            <option value="GFS">NCEP GFS (0.25°, forecasts — no account)</option>
+            <option value="MERRA2">NASA MERRA-2 (3-hourly reanalysis — Earthdata account)</option>
+            <option value="ERA5">ERA5 archive of a validation case (ETEX-1 / CAPTEX-83)</option>
+          </select></label>
+        <div id="dl-gfs">
+          <label>Mode
+            <select id="dl-mode" onchange="dlModeChanged()">
+              <option value="forecast">one analysis + its forecast</option>
+              <option value="range">date range of analyses (cycles × steps)</option>
+            </select></label>
+          <div id="dl-gfs-forecast">
+            <label>Analysis time (UTC) <input type="datetime-local" id="dl-analysis" step="21600"></label>
+            <label>Forecast length [h] <input type="number" id="dl-hours" value="48" min="3" max="384" step="3"></label>
+          </div>
+          <div id="dl-gfs-range" style="display:none">
+            <label>Start day <input type="date" id="dl-start"></label>
+            <label>End day <input type="date" id="dl-end"></label>
+            <label>Cycles <input type="text" id="dl-cycles" value="00,12" title="analysis cycles, e.g. 00,06,12,18"></label>
+            <label>Steps [h] <input type="text" id="dl-steps" value="3,6,9,12,15" title="forecast steps, at least 3 h"></label>
+          </div>
+          <label>Grid <select id="dl-res"><option value="0p25">0.25°</option><option value="0p50">0.5°</option><option value="1p00">1.0°</option></select></label>
+        </div>
+        <div id="dl-merra2" style="display:none">
+          <label>Start day <input type="date" id="dl-m2-start"></label>
+          <label>End day <input type="date" id="dl-m2-end"></label>
+          <label>Earthdata token <input type="password" id="dl-token" placeholder="or ~/.netrc with urs.earthdata.nasa.gov"></label>
+          <p class="dl-help">Collections: tavg3_3d_asm_Nv + tavg3_3d_mst_Ne (what <code>listvariables/MERRA2.vars</code> reads).</p>
+        </div>
+        <div id="dl-era5" style="display:none">
+          <label>Case <select id="dl-dataset"><option value="etex">ETEX-1 (Oct 1994, Europe)</option><option value="captex">CAPTEX-83 (Sept–Oct 1983, N. America)</option></select></label>
+          <label>or archive URL <input type="text" id="dl-url" placeholder="https://…/era5.tar.gz (overrides the case link)"></label>
+        </div>
+        <label>Target directory
+          <span class="dl-path"><input type="text" id="dl-out" placeholder="e.g. ./data/GFS">
+            <button type="button" onclick="browseInto('dl-out','dir')" title="browse">…</button></span></label>
+        <div class="dl-buttons">
+          <button id="dl-start-btn" onclick="dlStart()">Download</button>
+          <button id="dl-cancel-btn" onclick="dlCancel()" disabled>Cancel</button>
+          <button id="dl-apply-btn" onclick="dlApplyToConfig()" disabled title="set [[meteorology]] of the Config tab to this directory">Use in config</button>
+        </div>
+        <div id="dl-status" class="dl-help"></div>
+      </div>
+      <div class="dl-log"><pre id="dl-log-output"></pre></div>
     </div>
   </div>
 

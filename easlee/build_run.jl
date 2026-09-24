@@ -814,25 +814,45 @@ end
 
 # Resolve the AVAILABLE file:
 #   • explicit path → use it;
-#   • "auto" → SCAN the met directory (header valid time, filename fallback)
-#     and write a fresh AVAILABLE into the work dir — the user never hand-writes
-#     one.  An existing AVAILABLE in the met dir is ignored on "auto" so the
-#     listing always matches what is actually on disk.
+#   • "auto" → use a PRE-GENERATED <path>/AVAILABLE when it still matches the directory
+#     (written by download/*.py or by an earlier run — no header scan, no wait);
+#     otherwise SCAN the met directory (header valid time, filename fallback), write the
+#     index into the work dir AND into the met directory for the next run;
+#   • "scan" → always rescan (ignore a pre-generated index).
 function _resolve_available(m::EasleeConfig.MetSource, workdir::AbstractString, idx::Int)
-    if m.available != "auto" && isfile(m.available)
+    if !(m.available in ("auto", "scan")) && isfile(m.available)
         return m.available
     end
     varsfile = _variables_path(m)
     multistep = _is_multistep(varsfile)
     include_only, exclude = _scan_filters(varsfile)
+    avail = joinpath(workdir, "AVAILABLE_$(idx)")
+    cached = joinpath(m.path, AVAILABLE_INDEX_NAME)
+    if m.available == "auto" && isfile(cached)
+        ok, why = cached_available_ok(cached, m.path; include_only=include_only, exclude=exclude)
+        if ok
+            copy_available_with_vars(cached, avail, varsfile)
+            @info "using the pre-generated AVAILABLE of $(m.model) ($why)" path=cached
+            return avail
+        end
+        @info "pre-generated AVAILABLE of $(m.model) ignored ($why) — rescanning" path=cached
+    end
     @info "scanning meteorology directory for $(m.model) (auto AVAILABLE)…" path=m.path
     entries = scan_met_directory(m.path; model=m.model, multistep=multistep,
                                  include_only=include_only, exclude=exclude)
     isempty(entries) &&
         error("meteorology source \"$(m.model)\": no readable met files in $(m.path)")
-    avail = joinpath(workdir, "AVAILABLE_$(idx)")
     write_available!(avail, entries, varsfile, m.path)
     @info "  found $(length(entries)) time steps: $(first(entries)[1]) → $(last(entries)[1])"
+    if m.available == "auto"
+        try
+            write_available!(cached, entries, varsfile, m.path)
+            write_available_sidecar!(cached, m.path; include_only=include_only, exclude=exclude)
+            @info "  index written for the next run" path=cached
+        catch err
+            @info "  could not write the index into the met directory (read-only?) — the next run will scan again" path=cached
+        end
+    end
     return avail
 end
 
@@ -2414,6 +2434,13 @@ function _checkpoint_load!(rt, obj, spec, path::AbstractString, seeded)::DateTim
 end
 
 function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Bool=true)
+    # [run].seed (review 2026-09-23): the turbulence and the release sampling draw from the
+    # task-local RNG; seeding the main task makes the worker tasks' streams deterministic
+    # for the SAME thread count (Julia derives child-task seeds from the parent).
+    if spec.seed != 0
+        Random.seed!(spec.seed)
+        verbose && @info "[run].seed set" seed=spec.seed threads=Threads.nthreads() note="reproducible for the same thread count and backend"
+    end
     rt, obj = build_run(spec; prefetch=prefetch)
     ctx = rt.ctx; rc = ctx.runconfig
     kw  = step_kwargs(obj)

@@ -4,10 +4,12 @@ title: "EASLEE: an atmospheric Lagrangian particle dispersion model in Julia"
 type: software
 authors:
   - family-names: Brioude
-    given-names: Jerome
+    given-names: Jérôme
     email: jerome.brioude@univ-reunion.fr
+    affiliation: "LACy, Laboratoire de l'Atmosphère et des Cyclones, UMR 8105 CNRS, Université de La Réunion, Météo-France, Saint-Denis, La Réunion, France"
   - family-names: Augerai
-    given-names: Remi
+    given-names: Rémi
+    affiliation: "LACy, Laboratoire de l'Atmosphère et des Cyclones, UMR 8105 CNRS, Université de La Réunion, Météo-France, Saint-Denis, La Réunion, France"
 version: 1.1.0
 date-released: 2026-09-13
 license: GPL-3.0-or-later

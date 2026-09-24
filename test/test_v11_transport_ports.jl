@@ -170,14 +170,14 @@ NRC = EASLEE.Types.NestRunConfig
 check("NestRunConfig has horiz_tke", :horiz_tke in fieldnames(NRC))
 check("NestRunConfig has the per-nest closure (vmix_native, vmix_rw, vmix_ck)",
       all(f -> f in fieldnames(NRC), (:vmix_native, :vmix_rw, :vmix_ck)))
-# the KA-unsupported detector must name horizontal_tke so a GPU request refuses
+# 2026-09-23: the KA kernel carries horizontal_tke; what must remain is the explicit-backend refusal
 src = read(joinpath(REPO, "easlee", "src", "core", "operators.jl"), String)
-check("KA/GPU-unsupported switch lists horizontal_tke", occursin("rc.horiz_tke", src) && occursin("horizontal_tke (TKE-driven horizontal K_h)", src))
+check("advance_dispatch! refuses an explicitly requested backend it cannot honour (2026-09-21: horizontal_tke runs on the KA path, so it is no longer listed as threads-only)", occursin("_ADVANCE_REQUESTED", src) && occursin("Refusing to downgrade", src) && !occursin("horizontal_tke (TKE-driven horizontal K_h)", src))
 bsrc = read(joinpath(REPO, "easlee", "build_run.jl"), String)
-check("build_run refuses horizontal_tke with [physics.mixing], scheme=none, Hanna-fill met and KA advance",
+check("build_run refuses horizontal_tke with [physics.mixing], scheme=none or a Hanna-fill met (the KA refusal is retired: the kernel carries the term since 2026-09-21)",
       all(s -> occursin(s, bsrc), ("horizontal_tke and [physics.mixing] are both armed",
-                                   "needs a turbulence scheme", "requires a native-e driver",
-                                   "implemented on the CPU advance only")))
+                                   "needs a turbulence scheme", "requires a native-e driver")) &&
+      !occursin("horizontal_tke is implemented on the CPU advance only", bsrc))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 println(); println("="^78); println("[7] traj_open header by format"); println("="^78)

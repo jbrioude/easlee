@@ -188,7 +188,7 @@ println("  aqueous processing exists, and any produced SO4 is never")
 println("  condensed onto the bins.")
 
 # CSV for plotting
-csv = joinpath(REPO, "results", "aerosol_growth_ref.csv")
+csv = joinpath(REPO, "results", "aerosol_growth_ref.csv"); mkpath(dirname(csv))   # results/ is gitignored (review 2026-09-23)
 open(csv, "w") do io
     println(io, "d_nm,dlogd,N0,N24,N48,N72")
     for k in 1:NB

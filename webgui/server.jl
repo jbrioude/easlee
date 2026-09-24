@@ -74,6 +74,7 @@ function handle_figure(req::HTTP.Request)
 end
 
 function handle_control(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
     body   = JSON3.read(String(req.body))
     action = String(body["action"])
     if action == "run"
@@ -98,6 +99,9 @@ function handle_control(req::HTTP.Request)
 end
 
 function handle_eval(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
+    get(ENV, "EASLEE_GUI_REPL", "0") == "1" ||
+        return json_err("the Julia console is disabled; start the GUI with EASLEE_GUI_REPL=1 to enable it"; status=403)
     body   = JSON3.read(String(req.body))
     code   = String(body["code"])
     out, is_err = eval_expression(code)
@@ -256,8 +260,10 @@ end
 # ── Schema-driven config endpoints ────────────────────────────────────────────
 # /api/schema → the field descriptor list (drives the auto-generated form);
 # /api/config → the current RunSpec as a TOML-shaped dict (GET), or set it (POST).
+# the Chemistry section is not offered: the reactive-chemistry module is not part of this distribution
+_schema_json_transport() = filter(f -> get(f, "group", get(f, :group, "")) != "Chemistry", schema_json())
 handle_schema(::HTTP.Request) =
-    HTTP.Response(200, ["Content-Type"=>"application/json"], JSON3.write(schema_json()))
+    HTTP.Response(200, ["Content-Type"=>"application/json"], JSON3.write(_schema_json_transport()))
 
 function handle_get_config(::HTTP.Request)
     SPEC_DICT[] === nothing && (SPEC_DICT[] = default_spec_dict())
@@ -265,6 +271,7 @@ function handle_get_config(::HTTP.Request)
 end
 
 function handle_set_config(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
     try
         cfg = JSON3.read(String(req.body), Dict{String,Any})
         validate_runspec(dict_to_runspec(cfg))    # validate before storing
@@ -278,6 +285,7 @@ end
 # POST /api/load_toml {path} → parse+validate a .toml config from disk, store it
 # as the active RunSpec, and return it as the TOML-shaped dict the form renders.
 function handle_load_toml(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
     body = JSON3.read(String(req.body))
     path = String(body["path"])
     isfile(path) || return json_err("file not found: $path"; status=404)
@@ -307,6 +315,135 @@ function handle_config_toml(::HTTP.Request)
 end
 
 # ── Router ────────────────────────────────────────────────────────────────────
+
+# ── security (review 2026-09-23) ─────────────────────────────────────────────
+# A local single-user tool: bind to the loopback interface unless EASLEE_GUI_HOST
+# says otherwise; refuse POSTs that are not JSON from a local Host (a page in the
+# browser cannot send a cross-site JSON POST without a preflight, and the Host
+# header must be local); the Julia console (/api/eval) is OFF unless EASLEE_GUI_REPL=1.
+const _LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
+function _host_name(h::AbstractString)
+    h = strip(h)
+    startswith(h, "[") && return h[1:findfirst(==(']'), h)]      # [::1]:port
+    return first(split(h, ':'))
+end
+function _post_guard(req::HTTP.Request)
+    ct = lowercase(HTTP.header(req, "Content-Type", ""))
+    startswith(ct, "application/json") ||
+        return json_err("POST requests must carry Content-Type: application/json"; status=415)
+    host = _host_name(HTTP.header(req, "Host", ""))
+    host in _LOCAL_HOSTS ||
+        return json_err("requests are accepted from localhost only (Host = $host)"; status=403)
+    return nothing
+end
+
+# ── Meteorology download (download/*.py) ──────────────────────────────────────
+# POST /api/met/download  {model: GFS|MERRA2|ERA5, out, ...}  → spawns the matching
+# script of ../download and streams its output; GET /api/met/download/status polls it;
+# POST /api/met/download/cancel kills it.  The scripts write the AVAILABLE index, so a
+# run on the new directory starts without scanning.  Python from EASLEE_PYTHON (default
+# python3); the Earthdata token is passed through the environment, never on the command line.
+const DOWNLOAD_DIR = normpath(joinpath(@__DIR__, "..", "download"))
+const DL = Dict{String,Any}("running" => false, "log" => String[], "exit" => nothing,
+                            "proc" => nothing, "cmd" => "", "out" => "", "model" => "")
+const DL_LOCK = ReentrantLock()
+_python() = get(ENV, "EASLEE_PYTHON", Sys.iswindows() ? "python" : "python3")
+function _dl_log!(line::AbstractString)
+    lock(DL_LOCK) do
+        for piece in split(line, '\r')            # progress lines use \r
+            isempty(strip(piece)) || push!(DL["log"], String(piece))
+        end
+        length(DL["log"]) > 3000 && deleteat!(DL["log"], 1:1000)
+    end
+end
+_s(b, k, d="") = haskey(b, k) && b[k] !== nothing ? String(string(b[k])) : d
+function _download_command(b)
+    model = uppercase(_s(b, "model", "GFS")); out = _s(b, "out")
+    isempty(out) && error("target directory is empty")
+    env = copy(ENV)
+    if model == "GFS"
+        args = ["--out", out, "--res", _s(b, "res", "0p25"), "--source", _s(b, "source", "auto")]
+        if _s(b, "mode", "forecast") == "forecast"
+            isempty(_s(b, "analysis")) && error("analysis time is empty")
+            append!(args, ["--analysis", _s(b, "analysis"), "--hours", _s(b, "hours", "48")])
+        else
+            isempty(_s(b, "start")) && error("start date is empty")
+            append!(args, ["--start", _s(b, "start"), "--end", _s(b, "end", _s(b, "start")),
+                           "--cycles", _s(b, "cycles", "00,12"), "--steps", _s(b, "steps", "3,6,9,12,15")])
+        end
+        script = "gfs.py"
+    elseif model == "MERRA2"
+        isempty(_s(b, "start")) && error("start date is empty")
+        args = ["--start", _s(b, "start"), "--end", _s(b, "end", _s(b, "start")), "--out", out]
+        isempty(_s(b, "collections")) || append!(args, ["--collections", _s(b, "collections")])
+        isempty(_s(b, "token")) || (env["EARTHDATA_TOKEN"] = _s(b, "token"))
+        script = "merra2.py"
+    elseif model == "ERA5"
+        args = ["--out", out]
+        if !isempty(_s(b, "url"))
+            append!(args, ["--url", _s(b, "url")])
+        else
+            append!(args, ["--dataset", lowercase(_s(b, "dataset", "etex"))])
+        end
+        script = "era5_archive.py"
+    else
+        error("unknown model $model (GFS, MERRA2 or ERA5)")
+    end
+    cmd = Cmd([_python(), joinpath(DOWNLOAD_DIR, script), args...])
+    return setenv(cmd, env), "$(script) $(join(args, ' '))", model, out
+end
+function handle_met_download(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
+    DL["running"] && return json_err("a download is already running")
+    body = JSON3.read(String(req.body))
+    local cmd, shown, model, out
+    try
+        cmd, shown, model, out = _download_command(body)
+    catch err
+        return json_err(sprint(showerror, err))
+    end
+    isdir(DOWNLOAD_DIR) || return json_err("download scripts not found: $DOWNLOAD_DIR")
+    lock(DL_LOCK) do
+        empty!(DL["log"]); DL["exit"] = nothing; DL["cmd"] = shown; DL["out"] = out; DL["model"] = model
+        DL["running"] = true
+    end
+    _dl_log!("\$ " * shown)
+    Threads.@spawn begin
+        try
+            proc = open(pipeline(cmd; stderr=stdout))
+            DL["proc"] = proc
+            for line in eachline(proc)
+                _dl_log!(line)
+            end
+            wait(proc)
+            DL["exit"] = proc.exitcode
+            _dl_log!(proc.exitcode == 0 ? "finished — AVAILABLE index written in $out" :
+                     "exited with code $(proc.exitcode)")
+        catch err
+            DL["exit"] = -1; _dl_log!("error: " * sprint(showerror, err))
+        finally
+            DL["running"] = false; DL["proc"] = nothing
+        end
+    end
+    return json_ok(Dict("ok" => true, "cmd" => shown))
+end
+function handle_met_download_status(::HTTP.Request)
+    lines = lock(DL_LOCK) do
+        n = length(DL["log"]); DL["log"][max(1, n - 199):n]
+    end
+    json_ok(Dict("running" => DL["running"], "exit" => DL["exit"], "cmd" => DL["cmd"],
+                 "out" => DL["out"], "model" => DL["model"], "log" => lines,
+                 "python" => _python(), "scripts" => isdir(DOWNLOAD_DIR)))
+end
+function handle_met_download_cancel(req::HTTP.Request)
+    g = _post_guard(req); g === nothing || return g
+    p = DL["proc"]
+    (p === nothing || !DL["running"]) && return json_err("no download running")
+    try; kill(p); catch; end
+    _dl_log!("cancelled")
+    json_ok(Dict("ok" => true))
+end
+
 const ROUTER = HTTP.Router()
 HTTP.register!(ROUTER, "GET",  "/",             handle_index)
 HTTP.register!(ROUTER, "GET",  "/static/**",    handle_static)   # legacy
@@ -330,5 +467,8 @@ HTTP.register!(ROUTER, "POST", "/api/load_toml",  handle_load_toml)
 HTTP.register!(ROUTER, "GET",  "/api/config.toml", handle_config_toml)
 HTTP.register!(ROUTER, "GET",  "/api/browse",     handle_browse)
 HTTP.register!(ROUTER, "GET",  "/api/domain",     handle_domain)
+HTTP.register!(ROUTER, "POST", "/api/met/download",        handle_met_download)
+HTTP.register!(ROUTER, "GET",  "/api/met/download/status", handle_met_download_status)
+HTTP.register!(ROUTER, "POST", "/api/met/download/cancel", handle_met_download_cancel)
 
-start_server(port::Int) = HTTP.serve(ROUTER, "0.0.0.0", port)
+start_server(port::Int) = HTTP.serve(ROUTER, get(ENV, "EASLEE_GUI_HOST", "127.0.0.1"), port)   # loopback by default (review 2026-09-23)

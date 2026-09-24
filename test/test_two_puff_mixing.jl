@@ -289,6 +289,19 @@ println()
 # ─────────────────────────────────────────────────────────────────────────────
 # Figure (optional — numeric checks above are complete)
 # ─────────────────────────────────────────────────────────────────────────────
+# ── assertions (review 2026-09-23: the test printed a table and always passed) ──
+# Each scheme must keep the total tracer of each puff within 5 % of the analytic value
+# (recorded 2026-09-23: 0.989 stochastic and old, 0.985 new) — a regression guard.
+nfail = 0
+for (lab, c1, c2) in (("stochastic", sc1, sc2), ("old", old_c1, old_c2), ("new", new_c1, new_c2))
+    for (k, c) in ((1, c1), (2, c2))
+        r = sum(c) / total_ref
+        abs(r - 1) < 0.05 || (global nfail += 1; println("FAIL: $lab total c$k / analytic = $r (expected within 5 % of 1)"))
+    end
+end
+println(nfail == 0 ? "ALL PASS (two-puff mixing: 6 totals checked)" : "FAIL: $nfail checks")
+nfail == 0 || exit(1)
+
 SAVE_PLOT || exit(0)
 
 fig = Figure(size=(1400, 1100), fontsize=13)
@@ -355,7 +368,7 @@ text!(ax_f, -27.0, 0.90;
            "  New:         $(round(rmse_n, sigdigits=2))",
       fontsize=11, align=(:left, :top))
 
-outpath = joinpath(REPO, "results", "two_puff_mixing.png")
+outpath = joinpath(REPO, "results", "two_puff_mixing.png"); mkpath(dirname(outpath))
 mkpath(dirname(outpath))
 save(outpath, fig; px_per_unit=2)
 println("Saved → $outpath")

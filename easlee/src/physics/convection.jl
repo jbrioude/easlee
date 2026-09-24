@@ -42,8 +42,24 @@
 #
 # All probabilities use the grid-mean, time-mean archived fluxes, which is
 # consistent with parcels representing grid-mean air masses.  The scheme is
-# applied with dt = |model timestep| in both forward and backward runs
-# (convective mixing is its own adjoint in this Monte-Carlo form).
+# applied with dt = |model timestep| in both directions.  BACKWARD runs use the
+# ADJOINT of the forward kernel (2026-09-24; until then the forward kernel was
+# applied unchanged, with the comment "its own adjoint" — it is not: the conveyor
+# is strongly non-symmetric).  For a mass-conserving kernel P(k→l) the adjoint is
+# the mass-weighted transpose P*(l→k) = P(k→l)·dm[k]/dm[l]; because the forward
+# step is the composition  subsidence ∘ conveyor, the backward step is
+# conveyor* ∘ subsidence*, each reversed exactly as a walk over the pooled masses:
+#   subsidence*: from l, ascend across l+1/2 with probability S[l]/(dm[l]+S[l−1])
+#                (the share of the pool at l that had arrived from above), repeat;
+#   conveyor*:   at c, came from the resident air with probability (dm−mo)/m1,
+#                from the updraught with up_in/m1, from the downdraught with
+#                dn_in/m1; the draught origin is found walking DOWN the updraught
+#                (up the downdraught): at layer j the entrained share of the
+#                draught flux is (F_{j+1/2} − F_{j−1/2})/F_{j+1/2}.
+# test/test_convection_adjoint.jl checks Q(l→k)·dm[l] = P(k→l)·dm[k] by Monte-Carlo
+# and that a uniform ensemble stays uniform under both kernels.  The `cape`
+# scheme (diagnostic_convection!) mixes a column toward uniform: its kernel is
+# symmetric in air mass and needs no transpose.
 #
 # Vertical indexing: profiles are collocated with zlev (k = 1 surface … Nk top)
 # exactly like every other 3-D met field after the GRIB reader's surface-layer
@@ -71,13 +87,14 @@ function convective_redistribution!(state, ctx, convfields, dt_s::Real, t_array;
         isempty(idx) && continue
 
         _convect_nest!(state, nestctx, cf, Float32(dt_s), t_array[n], idx;
-                       conv_count = conv_count)
+                       conv_count = conv_count,
+                       backward = Int(ctx.runconfig.direction) == -1)   # adjoint kernel (2026-09-24)
     end
     return nothing
 end
 
 function _convect_nest!(state, nestctx, cf, dt::Float32, indt, idx;
-                        conv_count = nothing)
+                        conv_count = nothing, backward::Bool = false)
     zlev_arr = nestctx.metfields3D.zlev
     rho_arr  = nestctx.metfields3D.rho
     nz       = size(zlev_arr, 3)
@@ -132,45 +149,14 @@ function _convect_nest!(state, nestctx, cf, dt::Float32, indt, idx;
 
         indl = state.indl[i]
         k0   = clamp(Base.unsafe_trunc(Int, indl), 1, nz - 1)
-
-        # 1) Conveyor: entrain into the up/downdraught (probabilities = the flux
-        #    fraction entrained out of this layer) and walk to the detrainment
-        #    level; otherwise the parcel stays (it is "environment" air).
-        @inbounds eu_out = dm[k0] > 0f0 ? max(_uflux(mu, k0) - _uflux(mu, k0 - 1), 0f0) * dt / dm[k0] : 0f0
-        @inbounds ed_out = dm[k0] > 0f0 ? max(_dflux(md, k0 - 1) - _dflux(md, k0), 0f0) * dt / dm[k0] : 0f0
-        tot = eu_out + ed_out
-        if tot > 1.0f0; eu_out /= tot; ed_out /= tot; end
-
-        r = _conv_rand(state, i)
-        kc = if r < eu_out
-            _flux_walk(state, i, mu, k0, nz, +1)        # ascend in updraught
-        elseif r < eu_out + ed_out
-            _flux_walk(state, i, md, k0, nz, -1)        # descend in downdraught
-        else
-            k0                                          # environment (resident)
-        end
-
-        # 2) Compensating subsidence: descend across interfaces to fill the
-        #    exact cumulative air-mass deficit S left by the conveyor.  The
-        #    descent probability at interface c−1/2 is S[c-1]/(dm[c]+S[c-1]),
-        #    which maps the post-conveyor image m1 back onto dm in expectation,
-        #    so an initially uniform (in air mass) ensemble stays uniform.
-        @inbounds while kc > 1
-            denom = dm[kc] + S[kc - 1]
-            (denom > 0f0 && _conv_rand(state, i) < S[kc - 1] / denom) || break
-            kc -= 1
-        end
-
+        kc   = _convect_column(_ParcelRNG(state, i), k0, dm, m1, S, mu, md, dt, nz, backward)
         # 3) Land at a uniformly random height inside the destination layer.
         @inbounds z_new = z[kc] + _conv_rand(state, i) * (z[min(kc + 1, nz)] - z[kc])
-
         # Met fields can carry NaN at masked cells; never write a non-finite
         # level index (same policy as the advection kernel).
         isfinite(z_new) || continue
-
         z_new < 0.0f0 && (z_new = -z_new)         # reflect at ground
         z_new > z[nz - 1] && (z_new = z[nz - 1])  # keep below model top
-
         state.indl[i] = _z_to_indl(z, z_new, nz)
 
         # [tracers]: count a convective displacement (destination layer ≠ origin).
@@ -178,6 +164,101 @@ function _convect_nest!(state, nestctx, cf, dt::Float32, indt, idx;
         (conv_count !== nothing && kc != k0) && (@inbounds conv_count[i] += Int32(1))
     end
     return nothing
+end
+
+# ── Column kernel (forward and adjoint) ─────────────────────────────────────
+# Per-parcel random numbers from the parcel's own xorshift stream, as a callable.
+struct _ParcelRNG{S}
+    state::S
+    i::Int
+end
+@inline (r::_ParcelRNG)() = _conv_rand(r.state, r.i)
+
+"""
+    _convect_column(rng, k0, dm, m1, S, mu, md, dt, nz, backward) → destination layer
+
+One convective redistribution of a parcel in layer `k0` on a column described by
+the layer air masses `dm`, the post-conveyor image `m1`, the cumulative deficit `S`
+and the interface up/down mass fluxes (`mu`, `md`, level-collocated, magnitudes).
+`backward=false`: conveyor then compensating subsidence (the forward kernel);
+`backward=true`: the mass-weighted transpose — reversed subsidence then reversed
+conveyor.  `rng()` returns a uniform number in [0,1).
+"""
+@inline function _convect_column(rng, k0::Int, dm, m1, S, mu, md, dt::Float32, nz::Int, backward::Bool)
+    if !backward
+        # 1) Conveyor: entrain into the up/downdraught (probabilities = the flux
+        #    fraction entrained out of this layer) and walk to the detrainment
+        #    level; otherwise the parcel stays (it is "environment" air).
+        @inbounds eu_out = dm[k0] > 0f0 ? max(_uflux(mu, k0) - _uflux(mu, k0 - 1), 0f0) * dt / dm[k0] : 0f0
+        @inbounds ed_out = dm[k0] > 0f0 ? max(_dflux(md, k0 - 1) - _dflux(md, k0), 0f0) * dt / dm[k0] : 0f0
+        tot = eu_out + ed_out
+        if tot > 1.0f0; eu_out /= tot; ed_out /= tot; end
+        r = rng()
+        kc = if r < eu_out
+            _flux_walk(rng, mu, k0, nz, +1)        # ascend in updraught
+        elseif r < eu_out + ed_out
+            _flux_walk(rng, md, k0, nz, -1)        # descend in downdraught
+        else
+            k0                                     # environment (resident)
+        end
+        # 2) Compensating subsidence: descend across interfaces to fill the
+        #    exact cumulative air-mass deficit S left by the conveyor.  The
+        #    descent probability at interface c−1/2 is S[c-1]/(dm[c]+S[c-1]),
+        #    which maps the post-conveyor image m1 back onto dm in expectation,
+        #    so an initially uniform (in air mass) ensemble stays uniform.
+        @inbounds while kc > 1
+            denom = dm[kc] + S[kc - 1]
+            (denom > 0f0 && rng() < S[kc - 1] / denom) || break
+            kc -= 1
+        end
+        return kc
+    else
+        # 1*) Reversed subsidence: the pool at level c after the forward descent
+        #     holds dm[c] + S[c-1] of which S[c] arrived from above — ascend with
+        #     that share, and repeat at the level above.
+        kc = k0
+        @inbounds while kc < nz - 1
+            denom = dm[kc] + (kc > 1 ? S[kc - 1] : 0f0)      # the pool at kc after the forward descent
+            (denom > 0f0 && rng() < S[kc] / denom) || break
+            kc += 1
+        end
+        # 2*) Reversed conveyor: the post-conveyor mass m1[c] is resident air
+        #     (dm − mo), updraught detrainment (up_in) or downdraught detrainment
+        #     (dn_in); the draught's origin is found by walking back along it.
+        @inbounds begin
+            up_in  = max(_uflux(mu, kc - 1) - _uflux(mu, kc), 0f0) * dt
+            dn_in  = max(_dflux(md, kc) - _dflux(md, kc - 1), 0f0) * dt
+            mtot   = max(m1[kc], 1f-30)
+            r = rng()
+            if r < up_in / mtot
+                return _flux_walk_adjoint(rng, mu, kc, nz, +1)
+            elseif r < (up_in + dn_in) / mtot
+                return _flux_walk_adjoint(rng, md, kc, nz, -1)
+            else
+                return kc
+            end
+        end
+    end
+end
+
+# Reverse walk along a draught: a parcel that detrained at layer `l` from the
+# updraught (dir=+1) came from a layer below.  Going down from l−1, the draught
+# flux at interface j+1/2 is made of the air entrained at j, share
+# (F_{j+1/2} − F_{j−1/2})/F_{j+1/2}, and of air from further below; stop where
+# the draught flux vanishes.  Mirror for the downdraught (dir=−1, walking up).
+@inline function _flux_walk_adjoint(rng, m::AbstractVector{Float32}, l::Int, nz::Int, dir::Int)
+    j = l - dir
+    @inbounds while 1 <= j <= nz - 1
+        f_here  = dir > 0 ? _uflux(m, j)     : _dflux(m, j - 1)   # flux leaving j toward l
+        f_below = dir > 0 ? _uflux(m, j - 1) : _dflux(m, j)       # flux entering j from further away
+        if f_here < _CONV_MF_EPS                                  # no draught leaves j: it started at j+dir
+            j += dir; break
+        end
+        pent = clamp((f_here - f_below) / f_here, 0.0f0, 1.0f0)   # entrained-at-j share
+        rng() < pent && break
+        j -= dir
+    end
+    return clamp(j, 1, nz - 1)
 end
 
 # Interface mass fluxes (collocated halfway between levels k and k+1); 0 at the
@@ -224,7 +305,7 @@ end
 # layer (so the per-parcel walk reproduces the flux-divergence detrainment used
 # by `_build_conv_column!`).  It always detrains where the flux dies (cloud top
 # / downdraught base) or at the domain edge.
-@inline function _flux_walk(state, i, m::AbstractVector{Float32},
+@inline function _flux_walk(rng, m::AbstractVector{Float32},
                             k0::Int, nz::Int, dir::Int)
     l = k0
     @inbounds while true
@@ -238,7 +319,7 @@ end
         f_out = dir > 0 ? _uflux(m, l)     : _dflux(m, l - 1)
         f_in < _CONV_MF_EPS && break       # draught has died here → detrain
         pdet = 1.0f0 - clamp(f_out / f_in, 0.0f0, 1.0f0)
-        _conv_rand(state, i) < pdet && break
+        rng() < pdet && break
     end
     return clamp(l, 1, nz - 1)
 end

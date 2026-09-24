@@ -58,12 +58,15 @@ start     = 2025-05-31T07:00:00
 stop      = 2025-05-31T10:00:00
 timestep  = "15min"
 benchmark = false              # per-group @time report at the end
+seed      = 0                  # Random.seed! at run start (0 = unseeded); reproducible for the same thread count and backend
 
 [[meteorology]]                # one table per nest, finest first
 model     = "ERA5"             # ERA5 | MERRA2 | GFS | AROME_HDF | MESONH | WRF | AROME
 path      = "/data/ERA5/20250531/"
 variables = "ERA5_CONV"        # → listvariables/ERA5_CONV.vars
-available = "auto"             # scan the directory; or an AVAILABLE file path
+available = "auto"             # "auto": use <path>/AVAILABLE when it matches the directory
+                               #   (download/*.py and the model write it), else scan and write it;
+                               #   "scan": always rescan; or an explicit AVAILABLE file path
 crop      = "auto"             # domain crop, see below: auto | off | [lon0, lon1, lat0, lat1]
 
 [[species]]
@@ -114,6 +117,10 @@ heights = [0, 500, 1000, 2000, 3000, 4000, 6000, 8000, 10000, 12000]
 checkpoint = "12h"     # save the full state every 12 h AND at run end ("end" = end only)
 # restart  = "results/myrun/checkpoint_myrun.jls"   # resume from a saved state
 ```
+
+The checkpoint is written with Julia's `Serialization`, whose format is not
+guaranteed to read back across Julia versions: resume a run with the Julia that
+wrote the checkpoint (review 2026-09-23).
 
 The checkpoint carries the complete parcel state, the seeded mask and the
 physics accumulators (ice, sea spray).  To EXTEND a
@@ -395,16 +402,13 @@ arithmetic); `test/test_track_nudge.jl` (14/14).
 
 ## Meteorology — automatic AVAILABLE
 
-`available = "auto"` scans the met directory at run time and builds the
-date→file mapping itself:
-
-- reads the authoritative valid time from each file's header (GRIB
-  validity / NetCDF time), with a filename fallback;
-- filters companion files (CLD, PT, SP1…) — only main files are listed;
-- recurses subdirectories (e.g. GFS `date/cycle/`);
-- de-duplicates overlapping forecast cycles, keeping the freshest run.
-
-Point `available` at an explicit `AVAILABLE` file to override.
+`available = "auto"` first looks for `<path>/AVAILABLE` — written by the download tools
+(`download/*.py`) or by an earlier run — and uses it when it still describes the directory
+(the `AVAILABLE.files` sidecar records the main files and their sizes; without a sidecar no
+main file may be newer than the index).  Otherwise the directory is scanned (GRIB/NetCDF
+header valid times, file-name fallback, freshest cycle per valid time) and the index is
+written into the met directory for the next run, alongside the per-run copy in the work
+dir.  `available = "scan"` always rescans; an explicit path uses that AVAILABLE file as is.
 
 ## Meteorology — domain crop (`crop`)
 

@@ -64,8 +64,12 @@ function initnetcdf!(oc, filename)
     relbox = Int(oc.Nc)
     backward = oc.direction == -1
 
-    latitude  = [oc.lat0 + oc.dlat*(j-1) for j in 1:Njout]
-    longitude = [oc.lon0 + oc.dlon*(i-1) for i in 1:Niout]
+    # Axis values are the CELL CENTRES (2026-09-24; before: the west/south edges,
+    # lon0 + dlon*(i-1), which every bilinear reader mis-registered by half a cell).
+    # Cell i spans [lon0 + dlon*(i-1), lon0 + dlon*i]; lon0/lat0 remain the grid's
+    # south-west corner, as in the config and in the time-framed writer (chemconc.jl).
+    latitude  = [oc.lat0 + oc.dlat*(j-0.5) for j in 1:Njout]
+    longitude = [oc.lon0 + oc.dlon*(i-0.5) for i in 1:Niout]
 
     # ── Horizontal axes ──────────────────────────────────────────────────────
     # On a native (Lambert) output CRS lon0/dlon are PROJECTION METRES, so the
@@ -79,11 +83,11 @@ function initnetcdf!(oc, filename)
     lat_dim = proj_m ?
         NcDim("y", Njout, atts=Dict("units"=>"m", "standard_name"=>"projection_y_coordinate",
                                     "long_name"=>"y coordinate of projection"); values=latitude) :
-        NcDim("latitude",  Njout, atts=Dict("units"=>"degrees_north"); values=latitude)
+        NcDim("latitude",  Njout, atts=Dict("units"=>"degrees_north", "comment"=>"cell centre; the cell spans ±dlat/2"); values=latitude)
     lon_dim = proj_m ?
         NcDim("x", Niout, atts=Dict("units"=>"m", "standard_name"=>"projection_x_coordinate",
                                     "long_name"=>"x coordinate of projection"); values=longitude) :
-        NcDim("longitude", Niout, atts=Dict("units"=>"degrees_east");  values=longitude)
+        NcDim("longitude", Niout, atts=Dict("units"=>"degrees_east", "comment"=>"cell centre; the cell spans ±dlon/2");  values=longitude)
     alt_dim = NcDim("height",    length(oc.outheight), atts=Dict("units"=>"meters"); values=oc.outheight)
     box_dim = NcDim("numpoint",  relbox, atts=Dict("units"=>"#"); values=collect(1:relbox))
     dims3   = [lon_dim, lat_dim, alt_dim]

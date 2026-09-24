@@ -2358,8 +2358,8 @@ function initoutgrid(runconfig,input,metconfig)
       lon2d = zeros(Float32, Niout, Njout); lat2d = zeros(Float32, Niout, Njout)
       @inbounds for j in 1:Njout, i in 1:Niout
          # output cell centre in nest projection metres → fractional nest index
-         fx = clamp((lon0 + dxout * (i - 1)) / ndx + 1.0, 1.0, Float64(Nx))
-         fy = clamp((lat0 + dyout * (j - 1)) / ndy + 1.0, 1.0, Float64(Ny))
+         fx = clamp((lon0 + dxout * (i - 0.5)) / ndx + 1.0, 1.0, Float64(Nx))   # cell CENTRE (2026-09-24)
+         fy = clamp((lat0 + dyout * (j - 0.5)) / ndy + 1.0, 1.0, Float64(Ny))
          i0 = min(floor(Int, fx), Nx - 1); j0 = min(floor(Int, fy), Ny - 1)
          tx = fx - i0; ty = fy - j0
          lon2d[i, j] = (1-tx)*(1-ty)*nlon[i0,j0] + tx*(1-ty)*nlon[i0+1,j0] +

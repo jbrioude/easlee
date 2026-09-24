@@ -154,7 +154,7 @@ function _run_frames(spec, want)
     lons = Float64[]; lats = Float64[]
     mkpath(spec.output.path)
     acc = 0                                   # samples accumulated in the current interval
-    for itime in 1:nsteps
+    for itime in 0:nsteps      # from the START step, like run_spec! (2026-09-24: 1:nsteps skipped the first release step, 1/13 of the mass)
         cur = t0 + itime * ts
         try                                       # stop gracefully when the met window runs out
             read_met_step!(rt, cur)
@@ -165,7 +165,7 @@ function _run_frames(spec, want)
         end
         EASLEE.State.sync_dtime_ns!(st)
         acc += 1
-        if itime % lstep == 0                 # interval end → write the average, then reset
+        if itime > 0 && itime % lstep == 0                 # interval end → write the average, then reset
             # a fresh file per frame: reusing one name trips NetCDF.jl's handle cache
             fnc = joinpath(spec.output.path, "_frame_$(itime).nc")
             isfile(fnc) && rm(fnc)
@@ -185,6 +185,10 @@ end
 
 _scale_pg(units) = occursin("kg", units) ? 1.0f15 : (occursin("ng", units) ? 1.0f3 : 1.0f0)
 
+# Bilinear interpolation of a cell-mean field at (lon, lat).  Since 2026-09-24 the NetCDF
+# axis values of every writer are the CELL CENTRES (io/output.jl and output/chemconc.jl),
+# so they are the interpolation nodes directly.  (Files written before that date by the
+# single-frame writer hold the west/south edges: add half a cell before sampling them.)
 function _bilin(fr, lons, lats, lon, lat)
     (lon < lons[1] || lon > lons[end] || lat < lats[1] || lat > lats[end]) && return 0.0
     i = clamp(searchsortedlast(lons, lon), 1, length(lons)-1); j = clamp(searchsortedlast(lats, lat), 1, length(lats)-1)
@@ -254,9 +258,13 @@ function dosage_report(O, M, S)
 end
 
 # ── BACKWARD: receptor → source-receptor sensitivity → conc ───────────────────
-# C(receptor) ≈ Σ_r  SRR(source_r) [s m⁻³] · Q_r/Δt_r [kg s⁻¹]  → pg m⁻³.
-# (Seibert & Frank 2004 convention — VERIFY the absolute factor against forward
-# on the first real run; the adjoint should reproduce the forward concentrations.)
+# C(receptor) = Σ_frames Σ_r  SRR(source_r, frame) [s m⁻³] · Q_r/Δt_r [kg s⁻¹] · f_overlap
+# (Seibert & Frank 2004).  The sensitivity is per SOURCE-TIME interval: a frame
+# carries emission only for the fraction f_overlap of its length that lies inside
+# the release window.  Until 2026-09-24 this summed the sensitivity over the WHOLE
+# run and multiplied by the 3-h emission rate, i.e. counted residence over the
+# source at times when nothing was emitted — the "pooled amplitude ratio of 3.3"
+# of paper Fig. 6c (scripts/captex_fwdbwd_check.jl reproduces both convolutions).
 function run_backward(rels, stns, obs, off)
     cand = sort([o for o in obs if o.conc_pg > 0]; by = o -> -o.conc_pg)[1:min(MAXBACK, count(o->o.conc_pg>0, obs))]
     O = Float64[]; M = Float64[]
@@ -270,14 +278,20 @@ function run_backward(rels, stns, obs, off)
         spec = validate_runspec(dict_to_runspec(build_spec(
             "captex_bwd_$(o.stn)_$(n)", conv(o.lon), o.lat, tm0, tm1, runstart, tm1,
             metdir, outdir, 1.0, "backward")))
-        frames, ftimes, lons, lats, units = _run_frames(spec, "_sens")   # s m⁻³ (time-integrated)
-        srr = isempty(frames) ? zeros(Float32, length(lons), length(lats)) : sum(frames)  # ∫ over run
+        frames, ftimes, lons, lats, units = _run_frames(spec, "_sens")   # s m⁻³ per frame (source-time interval)
+        # a backward frame written at t covers the source times [t, t + Δt_frame)
+        fr_s = length(ftimes) >= 2 ? abs(Dates.value(Second(ftimes[2] - ftimes[1]))) :
+                                     Dates.value(Second(Hour(3)))
         mod_pg = 0.0
         for r in rels
             rs = r.start + Year(off); re = r.stop + Year(off)
             (rs >= runstart && re <= tm1) || continue
             qrate = (r.mass_g/1000) / max(Dates.value(Second(re - rs)), 1)   # kg/s
-            mod_pg += _bilin(srr, lons, lats, conv(r.lon), r.lat) * qrate * 1.0f15
+            for (k, t) in enumerate(ftimes)
+                fov = max(0.0, Dates.value(Second(min(t + Second(fr_s), re) - max(t, rs)))) / fr_s
+                fov > 0 || continue
+                mod_pg += _bilin(frames[k], lons, lats, conv(r.lon), r.lat) * qrate * fov * 1.0f15
+            end
         end
         push!(O, o.conc_pg); push!(M, mod_pg)
     end
