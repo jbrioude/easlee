@@ -59,7 +59,7 @@ Ported from the developer tree (commits a0d6026, 7fd48d0, 4345524, 2bdf8f8, 77e0
   Back to 118 s.  Any new kernel switch must go in as a type.
 - Validation record: `docs/BENCHMARKS.md` §3b (all five switches ON, threads vs ka_gpu:
   2.3e-3 in mass, correlation 0.99993; per-switch pairs; well-mixed PBL and Thomson);
-  benchmark matrix for the paper in §0d and `docs/PAPER_TABLES_2026-09-23.md`
+  benchmark matrix for the paper in §0d
   (`scripts/bench_matrix.sh`, `scripts/bench_matrix_table.py`, `scripts/ka_compare_grids.py`,
   `configs/bench_*`).  Tests added: `test_ka_switches_unit.jl`, `test_hanna_gpu_4d.jl`,
   `test_wellmixed_pbl_4d.jl`, `test_wellmixed_thomson_4d.jl`.
