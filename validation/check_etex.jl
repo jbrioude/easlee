@@ -16,7 +16,7 @@ include(joinpath(@__DIR__, "datem.jl"))
 const GRID = length(ARGS) >= 1 ? ARGS[1] :
     joinpath(@__DIR__, "..", "results", "etex", "grid_output_etex.nc")
 const OBS  = length(ARGS) >= 2 ? ARGS[2] :
-    "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/ETEX"
+    get(ENV, "EASLEE_ETEX_DIR", joinpath(@__DIR__, "..", "data", "ETEX"))
 isfile(GRID) || error("grid file not found: $GRID — run configs/output_etex.toml first")
 
 # ── model frames ──────────────────────────────────────────────────────────────

@@ -68,5 +68,5 @@ dy   = 0.25
 heights = [0.0, 100.0]              # single 0–100 m sampling layer
 
   [output.receptors]
-  file      = "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/CAPTEX/stations.txt"
+  file      = "data/CAPTEX/stations.txt"
   layer_top = "100m"

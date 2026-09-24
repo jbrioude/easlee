@@ -14,7 +14,7 @@ include(joinpath(@__DIR__, "datem.jl"))
 const GRID = length(ARGS) >= 1 ? ARGS[1] :
     joinpath(@__DIR__, "..", "results", "captex", "grid_output_captex_ab.nc")
 const OBS  = length(ARGS) >= 2 ? ARGS[2] :
-    "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/CAPTEX"
+    get(ENV, "EASLEE_CAPTEX_DIR", joinpath(@__DIR__, "..", "data", "CAPTEX"))
 const RCSV = length(ARGS) >= 3 ? ARGS[3] :
     joinpath(dirname(GRID), "receptors_" * splitext(basename(GRID))[1][6:end] * ".csv")
 isfile(GRID) || error("grid file not found: $GRID — run configs/output_captex_ab.toml first")

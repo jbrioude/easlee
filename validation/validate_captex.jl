@@ -28,7 +28,7 @@
 using Dates, Printf, Statistics
 
 const OBS_DIR = get(ENV, "CAPTEX_OBS",
-    "/media/jbrioude/952dd8b2-6e30-4f01-acdb-26dc78abd6c8/jbrioude/Desktop/julia/CAPTEX")
+    get(ENV, "EASLEE_CAPTEX_DIR", joinpath(@__DIR__, "..", "data", "CAPTEX")))
 const MET_ROOT = get(ENV, "CAPTEX_MET", "/data/CAPTEX")
 const MODE     = get(ENV, "MODE", "selftest")
 

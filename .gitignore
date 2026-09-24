@@ -5,3 +5,7 @@ results/
 easlee_sysimage.*
 easlee/Manifest.toml
 webgui/Manifest.toml
+
+# validation observation data (fetched separately — see data/README.md)
+data/*
+!data/README.md

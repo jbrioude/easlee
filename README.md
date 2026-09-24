@@ -129,6 +129,17 @@ julia --project=easlee -e 'import Pkg; Pkg.instantiate()'   # once
 julia --project=easlee test/runtests.jl                     # 30 tests, no data needed
 ```
 
+## Contact
+
+EASLEE is developed by **Jérôme Brioude** at the Laboratoire de l'Atmosphère et
+des Cyclones (LACy), Université de La Réunion. Questions about using the model,
+bug reports, and requests for the chemistry module are all welcome:
+
+**jerome.brioude@univ-reunion.fr**
+
+If you hit a problem that others might hit too, opening an issue on this GitLab
+project is more useful than an email, since the answer stays visible.
+
 ## Licence and citation
 
 GPL-3.0-or-later ([LICENSE](LICENSE)). If you use EASLEE in your research,
