@@ -129,6 +129,17 @@ julia --project=easlee -e 'import Pkg; Pkg.instantiate()'   # once
 julia --project=easlee test/runtests.jl                     # 30 tests, no data needed
 ```
 
+## Authors and acknowledgements
+
+EASLEE was written by **Jérôme Brioude**, with contributions from **Remi
+Augerai**. The co-authors of the model description paper are warmly thanked for
+the discussions that shaped the model and for testing it on real cases.
+
+EASLEE stands in the lineage of **FLEXPART**, and follows its conventions
+closely enough that the debt should be stated plainly: the output-averaging
+semantics, the DATEM validation protocol and much of the physics vocabulary all
+come from there.
+
 ## Contact
 
 EASLEE is developed by **Jérôme Brioude** at the Laboratoire de l'Atmosphère et

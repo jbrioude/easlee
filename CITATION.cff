@@ -6,6 +6,8 @@ authors:
   - family-names: Brioude
     given-names: Jerome
     email: jerome.brioude@univ-reunion.fr
+  - family-names: Augerai
+    given-names: Remi
 version: 1.1.0
 date-released: 2026-09-13
 license: GPL-3.0-or-later
