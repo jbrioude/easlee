@@ -38,6 +38,32 @@ relative to the top of the repository, so start runs from there — or edit
 `[validation] obs_dir` and `[output.receptors] file` to give an absolute path
 of your own.
 
+## Data sources
+
+**ETEX-1 and CAPTEX-83 observations.**  Both come from the NOAA Air Resources
+Laboratory's *Data Archive of Tracer Experiments and Meteorology* (DATEM),
+<https://www.arl.noaa.gov/hysplit/datem-tracer-evaluation/datem/>, which is where
+the `emit-t1.txt` / `meas-t1.txt` DATEM format used here originates.  The files
+download directly, with no registration.  ARL asks that work using them carry the
+acknowledgement:
+
+> The authors gratefully acknowledge the NOAA Air Resources Laboratory (ARL) for
+> the provision of the Data Archive of Tracer Experiments and Meteorology (DATEM).
+
+The ETEX-1 measurements were made by the EC Joint Research Centre, whose original
+archive is at
+<https://remon.jrc.ec.europa.eu/past_activities/etex/site/datasets.htm>.  That
+archive asks that the version number of the tracer data be quoted; the release-1
+PMCH set is **etex1_v1.1.960505**.  Note that the readme distributed with it in
+1996 describes the data as restricted to the participants of the ATMES exercise.
+The files are today served openly from that public directory, but if you intend to
+redistribute them rather than simply use them, ask the JRC first.
+
+**Meteorology.**  The prepared archives are ECMWF ERA5, obtained through the
+Copernicus Climate Change Service and redistributed under the Copernicus licence,
+which asks for attribution.  Neither archive contains observation data: they hold
+ERA5 fields, the `AVAILABLE` index and the MARS retrieval requests, nothing else.
+
 ## Meteorology
 
 The scripts in [`../download/`](../download/README.md) fetch public
