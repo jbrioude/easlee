@@ -1,3 +1,7 @@
-# Download links of the prepared ERA5 archives (fill in when hosted).  Read by era5_archive.jl.
-etex_era5   = "https://doi.org/10.5281/zenodo.22951136"    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
-captex_era5 = ""    # hourly ERA5, Sept-Oct 1983, eastern North America — validation/validate_captex.jl
+# Download links of the prepared ERA5 archives.  Read by era5_archive.jl.
+# Only the ETEX-1 meteorology is distributed.  The CAPTEX-83 entry is kept so the case
+# works for anyone who hosts that archive themselves, but we do not provide the files:
+# retrieve them with flex_extract (https://www.flexpart.eu/flex_extract) and either fill
+# the link in below or pass --url.
+etex_era5   = ""    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
+captex_era5 = ""    # NOT provided — hourly ERA5, Sept-Oct 1983, eastern North America (validation/validate_captex.jl)

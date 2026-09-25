@@ -14,7 +14,7 @@ path from clone to finished run is Julia-only.)
 |---|---|---|---|
 | `gfs.jl` | NCEP GFS 0.25/0.5/1.0° forecasts (NOMADS, last ~10 days; NOAA archive on AWS, 2021 onward) | none | `julia --project=easlee download/gfs.jl --analysis 2026-06-03T00 --hours 48 --out ./data/GFS` |
 | `merra2.jl` | NASA MERRA-2 3-hourly model-level reanalysis (GES DISC) | free Earthdata account | `EARTHDATA_TOKEN=… julia --project=easlee download/merra2.jl --start 2022-01-18 --end 2022-01-29 --out ./data/MERRA2` |
-| `era5_archive.jl` | prepared ERA5 archives of the validation cases (ETEX-1, CAPTEX-83), links in `links.toml` | none | `julia --project=easlee download/era5_archive.jl --dataset etex` |
+| `era5_archive.jl` | the prepared ERA5 archive of the ETEX-1 case, link in `links.toml` | none | `julia --project=easlee download/era5_archive.jl --dataset etex` |
 | `easlee_available.jl` | (re)write the index of an existing directory | — | `julia --project=easlee download/easlee_available.jl --model GFS --dir ./data/GFS` |
 | `repack_grib.jl` | shrink a GRIB archive ~3x with 12-bit JPEG packing, for publishing or archiving | none | `julia --project=easlee download/repack_grib.jl /data/ETEX --out ./ETEX_jpeg` |
 
@@ -58,7 +58,16 @@ coder rejects, keep their original packing; that is why the gain is ~3x and not
 `era5_archive.jl --dataset etex` unpacks into `data/ERA5_ETEX` and writes the
 `AVAILABLE` index with the `ERA5_CAPTEX` namelist, which is what the `configs/etex_*`
 and `configs/validate_*` files already expect, so a fresh clone needs no path editing.
-The CAPTEX archive lands in `data/ERA5_CAPTEX` the same way.
+
+Only the ETEX-1 meteorology is distributed: it is about 2 GB repacked, against roughly
+11 GB for CAPTEX-83.  The CAPTEX case still runs — its configs and `validate_captex.jl`
+are unchanged — but you supply the meteorology yourself, with
+[flex_extract](https://www.flexpart.eu/flex_extract), and either fill `captex_era5` in
+`links.toml` or pass `--url`.
+
+If the link is a DOI or a Zenodo record page, the script resolves it to the actual file;
+a plain file URL is used as given.  A URL that answers with a web page rather than an
+archive is reported as such instead of being unpacked.
 
 Pack the result as a plain `.tar`, not `.tar.gz`.  JPEG-packed GRIB is already
 compressed, so gzip buys almost nothing and costs time at both ends;

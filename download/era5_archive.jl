@@ -4,7 +4,6 @@
 # validation cases, then write its AVAILABLE index.
 #
 #     julia --project=easlee download/era5_archive.jl --dataset etex
-#     julia --project=easlee download/era5_archive.jl --dataset captex
 #     julia --project=easlee download/era5_archive.jl --url https://.../ERA5_ETEX.tar
 #
 # Download links live in links.toml next to this script; fill them in once the
@@ -16,6 +15,11 @@
 # `--dataset etex` unpacks into data/ERA5_ETEX and indexes it with the
 # ERA5_CAPTEX namelist, which is what the configs/etex_* and configs/validate_*
 # files expect, so a fresh clone needs no path editing.
+#
+# Only the ETEX-1 meteorology is distributed.  The CAPTEX-83 case is supported by
+# the model and its configs, but its ERA5 archive is three times the size and is
+# not hosted; retrieve it yourself with flex_extract and point
+# `[[meteorology]] path` at it, or pass `--url` if you have it somewhere.
 # ─────────────────────────────────────────────────────────────────────────────
 
 using Downloads
@@ -27,10 +31,11 @@ include(joinpath(@__DIR__, "easlee_available.jl"))
 
 const LINKS = joinpath(@__DIR__, "links.toml")
 
-# The prepared archives are flex_extract IFS_EA_* files with IFS_SFC_*
-# companions, which is what ERA5_CAPTEX.vars declares; ERA5_CONV.vars expects
-# _MET_/_CLD_ and would write an index that matches nothing.
-const ARCHIVE_VARS = Dict("etex" => "ERA5_CAPTEX", "captex" => "ERA5_CAPTEX")
+# The prepared archive holds flex_extract IFS_EA_* files with IFS_SFC_*
+# companions, which is what ERA5_CAPTEX.vars declares (the namelist is named for
+# the campaign it was first written for, and serves the ETEX archive too);
+# ERA5_CONV.vars expects _MET_/_CLD_ and would write an index matching nothing.
+const ARCHIVE_VARS = Dict("etex" => "ERA5_CAPTEX")
 
 "Read links.toml without pulling in a TOML parser for three lines of `key = \"value\"`."
 function read_links()
@@ -43,6 +48,43 @@ function read_links()
         links[strip(k)] = strip(strip(v), ['"', '\''])
     end
     return links
+end
+
+"""
+    resolve_archive_url(url) -> String
+
+A DOI, or a Zenodo record page, points at a landing page rather than a file.
+Given either, ask Zenodo which files the record holds and return the direct
+download link (preferring a .tar).  Anything else is passed through unchanged,
+so a plain file URL still works.
+
+The reply is scanned with a regex rather than parsed as JSON: it saves EASLEE a
+dependency for the two fields we need, and a change in Zenodo's schema shows up
+as "could not find a file", not as wrong data.
+"""
+function resolve_archive_url(url::AbstractString)
+    m = match(r"zenodo\.org/records?/(\d+)", url)
+    m === nothing && (m = match(r"10\.5281/zenodo\.(\d+)"i, url))
+    m === nothing && return String(url)
+    id = m.captures[1]
+
+    io = IOBuffer()
+    try
+        Downloads.download("https://zenodo.org/api/records/$id", io)
+    catch e
+        error("Zenodo record $id could not be read ($(nameof(typeof(e)))).  If the " *
+              "deposition is still a draft its DOI is not registered yet; publish it, " *
+              "or give the direct file URL with --url.")
+    end
+    body = String(take!(io))
+
+    links = [x.captures[1] for x in eachmatch(r"\"(https://zenodo\.org/api/records/\d+/files/[^\"]+/content)\"", body)]
+    isempty(links) &&
+        error("Zenodo record $id lists no downloadable file.  Give the direct file URL with --url.")
+    tar = findfirst(l -> occursin(".tar", l), links)
+    chosen = links[something(tar, 1)]
+    println("resolved $url -> $chosen")
+    return chosen
 end
 
 """
@@ -105,9 +147,9 @@ end
 function main(args=ARGS)
     if isempty(args) || "--help" in args || "-h" in args
         println("""
-        usage: julia --project=easlee download/era5_archive.jl (--dataset etex|captex | --url URL) [options]
+        usage: julia --project=easlee download/era5_archive.jl (--dataset etex | --url URL) [options]
 
-          --dataset D     named archive from links.toml (etex or captex)
+          --dataset D     named archive from links.toml (etex; CAPTEX is not distributed)
           --url U         archive URL (.tar / .tar.gz / .tgz / .zip), overrides --dataset
           --out DIR       target directory (default ./data/ERA5_<DATASET>)
           --vars NAME     variables namelist for the index (default ERA5_CAPTEX for these archives)
@@ -121,21 +163,34 @@ function main(args=ARGS)
         "vars" => nothing, "keep-archive" => false))
 
     ds = o["dataset"]
-    ds === nothing || ds in ("etex", "captex") || error("--dataset must be etex or captex")
+    ds === nothing || ds == "etex" ||
+        error("--dataset only knows etex: the CAPTEX meteorology is not distributed " *
+              "(retrieve it with flex_extract, or give --url)")
     url = something(o["url"], get(read_links(), "$(ds)_era5", ""), "")
     isempty(url) &&
-        error("no URL: give --url, or --dataset etex|captex with the link filled in download/links.toml")
+        error("no URL: give --url, or --dataset etex with the link filled in download/links.toml")
 
     vars_ = something(o["vars"], get(ARCHIVE_VARS, something(ds, ""), "ERA5_CONV"))
     out   = something(o["out"], "./data/ERA5_$(uppercase(something(ds, "archive")))")
     mkpath(out)
 
+    url  = resolve_archive_url(url)
     base = basename(split(url, "?")[1])
+    endswith(base, "/content") && (base = basename(dirname(split(url, "?")[1])))
     arc  = joinpath(out, isempty(base) ? "era5_archive.tar" : base)
     if !isfile(arc)
         println("get $url")
         Downloads.download(url, arc; progress=progress_printer())
         println()
+        # A landing page or an error page saved under an archive name fails later
+        # with a confusing "unknown archive type"; say what actually happened.
+        magic = open(arc, "r") do io; read(io, min(filesize(arc), 512)); end
+        if occursin("<html", lowercase(String(copy(magic))))
+            rm(arc; force=true)
+            error("that URL returned a web page, not an archive.  A DOI or record page " *
+                  "is a landing page: give the direct file link (Zenodo: the link behind " *
+                  "the Download button), or a DOI this script can resolve.")
+        end
     else
         println("exists: $arc")
     end
