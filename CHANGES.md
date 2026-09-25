@@ -16,7 +16,7 @@
   `test_point_source_mixing.jl` and `test_two_puff_mixing.jl` now assert (conservation and
   totals within tolerance) instead of only printing; the three slow well-mixed tests
   (10–45 min each) run only with `EASLEE_SLOW_TESTS=1`, so the default suite is 35 tests
-  in minutes; `.gitlab-ci.yml` and `.github/workflows/ci.yml` run it on Julia 1.10 and 1.12.
+  in minutes; `.github/workflows/ci.yml` runs it on Julia 1.10 and 1.12.
 - **Suite green again after the GPU port**: `test_v11_transport_ports.jl` expected the
   retired "horizontal_tke is CPU-only" refusal and the old unsupported-switch list (now it
   checks the explicit-backend refusal instead); `io/vmix_namelist.jl` stays this
