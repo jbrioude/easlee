@@ -82,6 +82,18 @@ EASLEE was written by **Jérôme Brioude**, with contributions from **Rémi Auge
 
 The reader is referred to Stohl et al. (2005) for the physics and numerics inherited from FLEXPART.
 
+## Contributing
+
+EASLEE was written without funding and without institutional support. It exists because the work was worth doing. Anyone who wants to help is welcome, and there is more than enough to do.
+
+**Adding a meteorological model is the easiest place to start.** EASLEE reads a Eulerian model through a variables namelist rather than through new transport code, so a new dataset usually means describing its fields in `listvariables/<NAME>.vars` and nothing more. If the model you work with is not in the list, it can almost certainly be added.
+
+**Developers are welcome.** The computational layer is written once against abstract grid and level types, so a new projection or a new vertical coordinate means adding methods, not editing the transport code. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how the pieces fit together.
+
+**Co-authorship and proposals.** If EASLEE is useful to your work, co-authorship is open to discussion, and so is including the model in a funding proposal.
+
+The bottom line is simple. If you care about this model, write an email.
+
 ## Contact
 
 EASLEE is developed at the Laboratoire de l'Atmosphère et des Cyclones (LACy, UMR 8105 CNRS, Université de La Réunion, Météo-France), Saint-Denis, La Réunion, France. Questions about using the model, bug reports, and requests for the chemistry module are all welcome:
