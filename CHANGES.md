@@ -305,12 +305,35 @@ in the developer tree.
   now `_convect_column(rng, k0, …, backward)`; `test/test_convection_adjoint.jl` (5 checks).
 - `docs/OUTPUT_GRID.md` updated.
 
+## 2026-09-25 — the download tools are Julia, so Julia is the only prerequisite
+
+- `download/` is now Julia: `gfs.jl`, `merra2.jl`, `era5_archive.jl`,
+  `easlee_available.jl`, `repack_grib.jl`, sharing `cli.jl` (flag parsing and a
+  throttled progress printer).  The Python versions are gone.  Nothing outside
+  Julia is needed any more, which matters most on Windows, where Python is
+  usually absent.  Verified against the Python output: `easlee_available.jl`
+  writes byte-identical `AVAILABLE` and `AVAILABLE.files`, `repack_grib.jl`
+  produces byte-identical GRIB, `gfs.jl` builds identical URLs, and
+  `era5_archive.jl` round-trips a 2.1 GB ETEX tar to an identical index.
+- `repack_grib.jl` takes `grib_set`/`grib_count` from `eccodes_jll`, the
+  artifact GRIB.jl already uses, so a system ecCodes install is no longer
+  needed.  `era5_archive.jl` unpacks with the `Tar` standard library and
+  `p7zip_jll`, and lifts a wrapping directory out of the archive so both tar
+  layouts land in the same place.
+- The web GUI's Data tab spawns these scripts with the easlee project instead of
+  `python3`; `EASLEE_PYTHON` is retired.
+- `easlee/Project.toml` declares `Downloads`, `Tar`, `eccodes_jll` and
+  `p7zip_jll`, all of which were already in the tree indirectly.
+- Analysis helpers now exist in both languages, so post-processing can be done
+  in either: `scripts/ka_compare_grids.jl`, `scripts/bench_matrix_table.jl` and
+  `tools/verify_nc.jl` join their `.py` twins.
+
 ## 2026-09-24 — data download tools, pre-generated AVAILABLE index, GUI Data tab, AROME configs
 
-- `download/`: `gfs.py` (NOMADS + NOAA/AWS archive, analysis+forecast or date range),
-  `merra2.py` (GES DISC, Earthdata token/netrc), `era5_archive.py` (prepared ETEX/CAPTEX
-  archives, links in `links.toml`), `easlee_available.py` (index writer).  Standard-library
-  Python 3.  Every script writes `<dir>/AVAILABLE` + `AVAILABLE.files`.
+- `download/`: `gfs.jl` (NOMADS + NOAA/AWS archive, analysis+forecast or date range),
+  `merra2.jl` (GES DISC, Earthdata token/netrc), `era5_archive.jl` (prepared ETEX/CAPTEX
+  archives, links in `links.toml`), `easlee_available.jl` (index writer).  Julia, run
+  with the easlee project.  Every script writes `<dir>/AVAILABLE` + `AVAILABLE.files`.
 - Model: `[meteorology].available = "auto"` first uses `<path>/AVAILABLE` when it still
   describes the directory (sidecar file list + sizes, or no newer file), else scans and
   writes the index there for the next run; `"scan"` forces a rescan

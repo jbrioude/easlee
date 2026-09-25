@@ -65,7 +65,7 @@ model     = "ERA5"             # ERA5 | MERRA2 | GFS | AROME_HDF | MESONH | WRF 
 path      = "/data/ERA5/20250531/"
 variables = "ERA5_CONV"        # → listvariables/ERA5_CONV.vars
 available = "auto"             # "auto": use <path>/AVAILABLE when it matches the directory
-                               #   (download/*.py and the model write it), else scan and write it;
+                               #   (download/*.jl and the model write it), else scan and write it;
                                #   "scan": always rescan; or an explicit AVAILABLE file path
 crop      = "auto"             # domain crop, see below: auto | off | [lon0, lon1, lat0, lat1]
 
@@ -403,7 +403,7 @@ arithmetic); `test/test_track_nudge.jl` (14/14).
 ## Meteorology — automatic AVAILABLE
 
 `available = "auto"` first looks for `<path>/AVAILABLE` — written by the download tools
-(`download/*.py`) or by an earlier run — and uses it when it still describes the directory
+(`download/*.jl`) or by an earlier run — and uses it when it still describes the directory
 (the `AVAILABLE.files` sidecar records the main files and their sizes; without a sidecar no
 main file may be newer than the index).  Otherwise the directory is scanned (GRIB/NetCDF
 header valid times, file-name fallback, freshest cycle per valid time) and the index is

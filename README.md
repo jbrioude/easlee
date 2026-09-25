@@ -50,6 +50,11 @@ The model is evaluated against the **ETEX-1** and **CAPTEX-83** tracer experimen
 
 ## What is in the box
 
+Julia is the only thing you need installed to run EASLEE: everything on the path
+from a fresh clone to a finished run, the downloaders included, is Julia. The
+analysis helpers under `scripts/` and `tools/` come in both Julia and Python, so
+you can post-process in whichever you prefer.
+
 ```text
 easlee/          the engine (Julia source) and its run environment
 scripts/         easlee.jl (the entry point) and run_config.jl (lower-level runner)

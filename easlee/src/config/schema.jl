@@ -49,7 +49,7 @@ function schema_fields()::Vector{Field}
                    options=["ERA5","MERRA2","GFS","AROME_HDF","MESONH","WRF","AROME"]))
     push!(F, Field("meteorology[].path", "string", "", "Meteorology", "Directory of met files"))
     push!(F, Field("meteorology[].variables", "string", "", "Meteorology", "Variables namelist (listvariables/<name>.vars)"))
-    push!(F, Field("meteorology[].available", "string", "auto", "Meteorology", "AVAILABLE file path; 'auto' = use <path>/AVAILABLE when present and up to date (written by download/*.py or by an earlier run), else scan the path and write it; 'scan' = always rescan"))
+    push!(F, Field("meteorology[].available", "string", "auto", "Meteorology", "AVAILABLE file path; 'auto' = use <path>/AVAILABLE when present and up to date (written by download/*.jl or by an earlier run), else scan the path and write it; 'scan' = always rescan"))
     push!(F, Field("meteorology[].crop", "string", "auto", "Meteorology", "Domain crop: 'auto' (crop to the domainfill box + 2 cells; exact — the cull keeps parcels inside), 'off', or [lon0, lon1, lat0, lat1] (any run; parcels are terminated at the crop edge)"))
     push!(F, Field("meteorology[].max_gap", "string", "6h", "Meteorology", "Refuse to run when the met archive has a coverage gap larger than this inside the run window (a missing file, not an intended overrun); 0 = disable the guard"; unit="duration"))   # review 2026-09-04 A7 item 6
 

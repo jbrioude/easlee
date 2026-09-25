@@ -203,9 +203,9 @@ No archive at hand?  `download/` fetches public data and writes the `AVAILABLE` 
 model needs, so the first run starts immediately:
 
 ```bash
-python3 download/gfs.py --analysis 2026-06-03T00 --hours 48 --out ./data/GFS        # NCEP GFS, no account
-python3 download/merra2.py --start 2022-01-18 --end 2022-01-20 --out ./data/MERRA2  # MERRA-2, Earthdata account
-python3 download/era5_archive.py --dataset etex --out ./data/ERA5_ETEX              # ERA5 of the ETEX-1 case
+julia --project=easlee download/gfs.jl --analysis 2026-06-03T00 --hours 48 --out ./data/GFS        # NCEP GFS, no account
+julia --project=easlee download/merra2.jl --start 2022-01-18 --end 2022-01-20 --out ./data/MERRA2  # MERRA-2, Earthdata account
+julia --project=easlee download/era5_archive.jl --dataset etex --out ./data/ERA5_ETEX              # ERA5 of the ETEX-1 case
 ```
 
 then point `[[meteorology]]` at the directory (`model`, `path`, `variables`, `available =
@@ -236,7 +236,7 @@ Then open <http://localhost:8080>. Tabs:
 - **Data** — download NCEP GFS (one analysis + forecast, or a date range of cycles and
   steps), MERRA-2 (date range, Earthdata token) or a prepared ERA5 archive into a
   directory, with the `AVAILABLE` index written; **Use in config** points the Config tab's
-  `[[meteorology]]` at it.  Needs `python3` (`EASLEE_PYTHON` to override).
+  `[[meteorology]]` at it.  Julia only, no Python needed.
 
 The GUI and the CLI drive the *same* engine from the *same* TOML — anything you
 build in the form runs identically with `scripts/easlee.jl`.

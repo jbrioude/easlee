@@ -1,3 +1,3 @@
-# Download links of the prepared ERA5 archives (fill in when hosted).  Read by era5_archive.py.
-etex_era5   = ""    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
+# Download links of the prepared ERA5 archives (fill in when hosted).  Read by era5_archive.jl.
+etex_era5   = "https://doi.org/10.5281/zenodo.22951136"    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
 captex_era5 = ""    # hourly ERA5, Sept-Oct 1983, eastern North America — validation/validate_captex.jl

@@ -337,17 +337,19 @@ function _post_guard(req::HTTP.Request)
     return nothing
 end
 
-# ── Meteorology download (download/*.py) ──────────────────────────────────────
+# ── Meteorology download (download/*.jl) ──────────────────────────────────────
 # POST /api/met/download  {model: GFS|MERRA2|ERA5, out, ...}  → spawns the matching
 # script of ../download and streams its output; GET /api/met/download/status polls it;
 # POST /api/met/download/cancel kills it.  The scripts write the AVAILABLE index, so a
-# run on the new directory starts without scanning.  Python from EASLEE_PYTHON (default
-# python3); the Earthdata token is passed through the environment, never on the command line.
+# run on the new directory starts without scanning.  They are Julia scripts run with the
+# easlee project, so no Python is needed; the Earthdata token is passed through the
+# environment, never on the command line.
 const DOWNLOAD_DIR = normpath(joinpath(@__DIR__, "..", "download"))
 const DL = Dict{String,Any}("running" => false, "log" => String[], "exit" => nothing,
                             "proc" => nothing, "cmd" => "", "out" => "", "model" => "")
 const DL_LOCK = ReentrantLock()
-_python() = get(ENV, "EASLEE_PYTHON", Sys.iswindows() ? "python" : "python3")
+const EASLEE_PROJECT = normpath(joinpath(@__DIR__, "..", "easlee"))
+_julia() = joinpath(Sys.BINDIR, Sys.iswindows() ? "julia.exe" : "julia")
 function _dl_log!(line::AbstractString)
     lock(DL_LOCK) do
         for piece in split(line, '\r')            # progress lines use \r
@@ -371,13 +373,13 @@ function _download_command(b)
             append!(args, ["--start", _s(b, "start"), "--end", _s(b, "end", _s(b, "start")),
                            "--cycles", _s(b, "cycles", "00,12"), "--steps", _s(b, "steps", "3,6,9,12,15")])
         end
-        script = "gfs.py"
+        script = "gfs.jl"
     elseif model == "MERRA2"
         isempty(_s(b, "start")) && error("start date is empty")
         args = ["--start", _s(b, "start"), "--end", _s(b, "end", _s(b, "start")), "--out", out]
         isempty(_s(b, "collections")) || append!(args, ["--collections", _s(b, "collections")])
         isempty(_s(b, "token")) || (env["EARTHDATA_TOKEN"] = _s(b, "token"))
-        script = "merra2.py"
+        script = "merra2.jl"
     elseif model == "ERA5"
         args = ["--out", out]
         if !isempty(_s(b, "url"))
@@ -385,11 +387,11 @@ function _download_command(b)
         else
             append!(args, ["--dataset", lowercase(_s(b, "dataset", "etex"))])
         end
-        script = "era5_archive.py"
+        script = "era5_archive.jl"
     else
         error("unknown model $model (GFS, MERRA2 or ERA5)")
     end
-    cmd = Cmd([_python(), joinpath(DOWNLOAD_DIR, script), args...])
+    cmd = Cmd([_julia(), "--project=$EASLEE_PROJECT", joinpath(DOWNLOAD_DIR, script), args...])
     return setenv(cmd, env), "$(script) $(join(args, ' '))", model, out
 end
 function handle_met_download(req::HTTP.Request)
@@ -433,7 +435,7 @@ function handle_met_download_status(::HTTP.Request)
     end
     json_ok(Dict("running" => DL["running"], "exit" => DL["exit"], "cmd" => DL["cmd"],
                  "out" => DL["out"], "model" => DL["model"], "log" => lines,
-                 "python" => _python(), "scripts" => isdir(DOWNLOAD_DIR)))
+                 "julia" => _julia(), "scripts" => isdir(DOWNLOAD_DIR)))
 end
 function handle_met_download_cancel(req::HTTP.Request)
     g = _post_guard(req); g === nothing || return g

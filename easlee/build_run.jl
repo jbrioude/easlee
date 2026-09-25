@@ -815,7 +815,7 @@ end
 # Resolve the AVAILABLE file:
 #   • explicit path → use it;
 #   • "auto" → use a PRE-GENERATED <path>/AVAILABLE when it still matches the directory
-#     (written by download/*.py or by an earlier run — no header scan, no wait);
+#     (written by download/*.jl or by an earlier run — no header scan, no wait);
 #     otherwise SCAN the met directory (header valid time, filename fallback), write the
 #     index into the work dir AND into the met directory for the next run;
 #   • "scan" → always rescan (ignore a pre-generated index).

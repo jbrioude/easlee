@@ -182,7 +182,7 @@ end
 
 # ── Pre-generated AVAILABLE in the met directory (2026-09-24) ─────────────────────
 # `[meteorology].available = "auto"` first looks for <path>/AVAILABLE — written by the
-# download tools (download/*.py) or by a previous run — and uses it when it still
+# download tools (download/*.jl) or by a previous run — and uses it when it still
 # describes what is on disk; otherwise the directory is scanned and the index written
 # there for the next run.  "scan" forces a rescan.  Line 1 (the variables namelist)
 # is rewritten with the run's own namelist when the index is copied into the work dir.
@@ -226,7 +226,7 @@ function read_available_entries(path::AbstractString)
 end
 
 # Sidecar <index>.files: the MAIN files (relative path, size) the index was built from.
-# Written next to the index by the model and by download/easlee_available.py; it is what
+# Written next to the index by the model and by download/easlee_available.jl; it is what
 # makes the validity check exact for archives whose overlapping cycles leave some files
 # out of the index (the scanner keeps the freshest cycle per valid time).
 sidecar_path(index::AbstractString) = index * ".files"
