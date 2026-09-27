@@ -35,6 +35,7 @@ mutable struct RunObjects
     spphys::Any            # SpeciesPhysics (decay / gas dry dep / wet A,B) or nothing
     icephys::Any           # IcePhysics ([species.ice] freezing/sedimentation) or nothing
     ssprays::Any           # Vector{SeaSprayBox} (kind="seaspray" sources; empty = none)
+    dusts::Any             # Vector{DustBox} (kind="dust" sources, Kok et al. 2014; empty = none)
     convphys::Any          # SpeciesConvert ([species.convert]) or nothing
     pradphys::Any          # PlumeRadiation ([physics.plume_radiation]) or nothing
     tagphys::Any           # TransportTags ([tracers]) or nothing
@@ -684,6 +685,12 @@ function _expand_releases!(input, spec, specnum)
                      isempty(r.comment) ? "volcanic $(r.species)" : r.comment, snum)
             end
             @info "expanded volcanic release" species=r.species phases=length(phases) sublayers=nsub profile=r.volc_profile mass_kept_pct=round(100kept_w, digits=1)
+        elseif r.kind == "dust"
+            # Kok et al. (2014) dust source: box reserved for attribution only, parcels
+            # spawned from the flux (build_dust/apply_dust! in run_spec!)
+            add!(r.lon[1], r.lon[2], r.lat[1], r.lat[2], r.z[1], r.z[2], zk,
+                 0.0, 0, r.time[1], r.time[2],
+                 isempty(r.comment) ? "dust $(r.species)" : r.comment, snum)
         elseif r.kind == "seaspray"
             # met-driven OSSA source: the box is reserved for species/relbox
             # attribution only — the engine spawns the parcels from the flux
@@ -1018,7 +1025,7 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
     crop = _crop_window(spec; warn=true)
     # seaspray releases schedule 0 particles — reserve their parcel-pool slots
     # from the TOML `particles` field (the spawn CAP for the run)
-    ss_parts = sum((r.kind == "seaspray" ? r.particles : 0) for r in spec.release; init=0)
+    ss_parts = sum((r.kind in ("seaspray", "dust") ? r.particles : 0) for r in spec.release; init=0)
     rt = build_runtime(input; prefetch=prefetch,
                        extra_slots=extra_slots + 2 * df_parts + ss_parts,
                        crop=crop)
@@ -1189,6 +1196,19 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
         push!(ssprays, ssb)
         @info "sea-spray source armed (OSSA)" species=spec.release[kr].species ocean_cells=length(ssb.ii) quantum_kg=ssb.quantum gust_sigma_ms=ssb.gust_sigma
     end
+    # Kok et al. (2014) dust sources (kind = "dust"): land cells scanned on the first
+    # step; optional clay/bare maps read here (NetCDF lon/lat/<var>)
+    dusts = EASLEE.Operators.DustBox[]
+    for (b, kr) in enumerate(specidx)
+        (1 <= kr <= length(spec.release) && spec.release[kr].kind == "dust") || continue
+        r = spec.release[kr]
+        cmap = isempty(r.dust_clay_file) ? nothing : _read_fraction_map(r.dust_clay_file, "clay")
+        bmap = isempty(r.dust_bare_file) ? nothing : _read_fraction_map(r.dust_bare_file, "bare")
+        db = EASLEE.Operators.build_dust(ctx, rt.metfields2D[1], b, r; clay_map = cmap, bare_map = bmap)
+        db === nothing && continue
+        push!(dusts, db)
+        @info "dust source armed (Kok et al. 2014)" species=r.species quantum_kg=db.quantum clay=(cmap === nothing ? r.dust_clay : "map") bare=(bmap === nothing ? r.dust_bare : "map") soil_moisture_pct=r.dust_w_pct threshold_d_um=r.dust_d_m*1e6 cd0=r.dust_cd0 ce=r.dust_ce calpha=r.dust_calpha
+    end
     pcfg = Dict{Int,NamedTuple}()
     for (b, k) in enumerate(specidx)
         r = spec.release[k]
@@ -1305,7 +1325,14 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
         sp = first(filter(s -> s.kind == "aerosol", spec.species))   # ONE bins set for all aerosol species (validate_runspec enforces agreement — review A7 item 4)
         # review 2026-09-04 A7 item 3: refractive_index was parsed and never passed (m_ri)
         m_ri = EasleeConfig.parse_refractive_index(sp.refractive_index)   # nothing = "auto" → type default
-        bins = if sp.size_distribution == "bins"
+        bins = if sp.size_distribution == "kok"
+            # Kok (2011) emitted dust distribution: bins over 0.2–20 µm (or the given edges)
+            ke = length(sp.bin_edges_m) >= 2 ? sp.bin_edges_m :
+                 exp.(range(log(EASLEE.Operators.KOK11_DMIN), log(EASLEE.Operators.KOK11_DMAX), length = sp.nbins + 1))
+            EASLEE.AerosolBins(ke; mass_frac = EASLEE.Operators.kok_mass_fractions(ke), rho_p=sp.density,
+                species=Symbol(sp.aerosol_type), m_ri=m_ri,
+                kappa = sp.kappa >= 0 ? Float32(sp.kappa) : nothing)
+        elseif sp.size_distribution == "bins"
             EASLEE.AerosolBins(sp.bin_edges_m; rho_p=sp.density,
                 species=Symbol(sp.aerosol_type), m_ri=m_ri,
                 kappa = sp.kappa >= 0 ? Float32(sp.kappa) : nothing)
@@ -1645,7 +1672,7 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
     obj = RunObjects(convfields, diagconv, diagconvparams,
                      wetdepparams, wetdepstate, aerosol, hybridvert, bench,
                      chemstate, chemcfg, chembg, cheminit, chemtl, chemcc, chemqv,
-                     spphys, icephys, ssprays, convphys, pradphys, tagphys, lightning,
+                     spphys, icephys, ssprays, dusts, convphys, pradphys, tagphys, lightning,
                      isempty(relchem) ? nothing : relchem,
                      isempty(relh2oplume) ? nothing :
                          (vapor = relh2oplume, ice = relh2oice),
@@ -2262,6 +2289,8 @@ function _checkpoint_save(path::AbstractString, rt, obj, spec, d::DateTime, seed
     isempty(obj.ssprays) ||
         (chk[:spray] = [(copy(b.acc), b.emitted[], b.emitted_mean[], b.emitted_gusty[], b.nspawn[])
                         for b in obj.ssprays])
+    isempty(obj.dusts) ||
+        (chk[:dust] = [(copy(b.acc), b.emitted[], b.nspawn[], b.flux_max[]) for b in obj.dusts])
     tmp = path * ".tmp"
     open(io -> serialize(io, chk), tmp, "w")
     mv(tmp, path; force=true)
@@ -2421,6 +2450,12 @@ function _checkpoint_load!(rt, obj, spec, path::AbstractString, seeded)::DateTim
             copyto!(view(obj.tagphys.conv_count, 1:n), chk[:tag_cv])
         end
     end
+    if haskey(chk, :dust)
+        for (b, sv) in zip(obj.dusts, chk[:dust])
+            length(b.acc) == length(sv[1]) && (b.acc .= sv[1])
+            b.emitted[] = sv[2]; b.nspawn[] = sv[3]; b.flux_max[] = sv[4]
+        end
+    end
     if haskey(chk, :spray)
         for (b, sv) in zip(obj.ssprays, chk[:spray])
             length(b.acc) == length(sv[1]) && (b.acc .= sv[1])
@@ -2431,6 +2466,23 @@ function _checkpoint_load!(rt, obj, spec, path::AbstractString, seeded)::DateTim
     EASLEE.State.sync_dtime_ns!(st)
     @info "checkpoint restored" file=path date=chk[:date] active=count(==(0x01), st.status)
     return chk[:date]::DateTime
+end
+
+# NetCDF lon/lat map of a soil fraction (variables lon|longitude, lat|latitude, <var>) → (lons, lats, vals[i,j])
+function _read_fraction_map(path::AbstractString, var::AbstractString)
+    v = NetCDF.open(path)
+    try
+        ln = haskey(v.vars, "lon") ? "lon" : "longitude"; lt = haskey(v.vars, "lat") ? "lat" : "latitude"
+        haskey(v.vars, var) || error("map $path has no variable $var (variables: $(join(keys(v.vars), ", ")))")
+        lons = Float64.(v.vars[ln][:]); lats = Float64.(v.vars[lt][:])
+        raw = v.vars[var][ntuple(_ -> Colon(), ndims(v.vars[var]))...]
+        vals = Float64.(ndims(raw) == 3 ? raw[:, :, 1] : raw)
+        size(vals) == (length(lons), length(lats)) || (vals = permutedims(vals))
+        size(vals) == (length(lons), length(lats)) || error("map $path: $var is $(size(vals)), expected ($(length(lons)), $(length(lats)))")
+        return (lons, lats, vals)
+    finally
+        NetCDF.close(v)
+    end
 end
 
 function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Bool=true)
@@ -2670,6 +2722,7 @@ function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Boo
         @info "inter-trajectory mixing armed" K_h=pmix.K_h sigma0_h=(pmix.sigma0_h > 0 ? pmix.sigma0_h : "auto (met grid)") sigma_v=(pmix.sigma_v > 0 ? pmix.sigma_v : "turbulence yl") background=pmix.background every=pmix.every
     # OSSA sea-spray sources (built in build_run; empty vector = none)
     ssprays = obj.ssprays
+    dusts = obj.dusts
     # flow-evolved covariance kernel ([output.covariance]): evolve every
     # parcel's P once per cov_stride sync steps by the resolved deformation +
     # turbulent growth; the deposit/receptors read P at evaluation time.
@@ -2705,6 +2758,15 @@ function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Boo
             EASLEE.timeit!(obj.bench, :seaspray) do
                 for ssb in ssprays
                     EASLEE.Operators.apply_seaspray!(rt.state, ctx, rt.metfields2D[1], ssb, d, indt_ss, dt_s)
+                end
+            end
+        end
+        # Kok et al. (2014) dust sources: met-driven surface parcel spawning over land
+        if !isempty(dusts) && itime > 0
+            indt_du = EASLEE.MetAdapter.met_time_index_array(d, ctx.nests)[1]
+            EASLEE.timeit!(obj.bench, :dust) do
+                for db in dusts
+                    EASLEE.Operators.apply_dust!(rt.state, ctx, rt.metfields2D[1], db, d, indt_du, dt_s)
                 end
             end
         end
@@ -2876,6 +2938,9 @@ function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Boo
     end
     isempty(spec.checkpoint) ||
         _checkpoint_save(chk_path, rt, obj, spec, loopstart + nsteps * ts, seeded)
+    for db in dusts
+        @info "dust (Kok 2014) budget" spawned_parcels=db.nspawn[] emitted_kg=round(db.emitted[], sigdigits=4) land_cells=length(db.ii) max_cell_flux_kg_m2_s=round(db.flux_max[], sigdigits=3) unspawned_kg=round(sum(db.acc; init=0.0), sigdigits=3)
+    end
     for ssb in ssprays
         enh = ssb.emitted_mean[] > 0 ? ssb.emitted_gusty[] / ssb.emitted_mean[] : 1.0
         @info "sea spray (OSSA) budget" spawned_parcels=ssb.nspawn[] emitted_kg=round(ssb.emitted[], sigdigits=4) mean_field_kg=round(ssb.emitted_mean[], sigdigits=4) gust_integrated_kg=round(ssb.emitted_gusty[], sigdigits=4) transient_enhancement=round(enh, digits=3)

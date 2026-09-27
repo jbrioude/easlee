@@ -41,3 +41,9 @@ julia --project=easlee scripts/easlee.jl configs/validate_etex.toml
 
 Published scores for reference: [`../docs/CAPTEX_RESULTS.md`](../docs/CAPTEX_RESULTS.md),
 [`../docs/ETEX_RESULTS.md`](../docs/ETEX_RESULTS.md).
+
+## check_aod_optics_cams.jl — aerosol optics vs a CAMS analysis (2026-09-26)
+
+Optics-only check: EASLEE's per-class AOD550 from the CAMS mixing ratios of one analysis
+against the CAMS 532-nm extinction column of the same file, RH from the ERA5 file of the same
+hour. No transport, no chemistry. PASS = ratio in [0.7, 1.4] and r > 0.7 (reference: 1.11 / 0.75).

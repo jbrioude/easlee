@@ -343,3 +343,28 @@ in the developer tree.
   can set `[[meteorology]]` of the Config tab to the downloaded directory.
 - Configs: `arome_meteofrance.toml` (native Météo-France NetCDF, model `AROME`) added
   beside `arome_hdf_france.toml` (ATMO Hauts-de-France GRIB2, model `AROME_HDF`).
+
+## 2026-09-25 — mineral-dust source (Kok et al. 2014), sea-spray level fix
+
+- `[[release]] kind = "dust"` (`easlee/src/physics/dust_kok.jl`): Kok et al. (2014) vertical
+  dust flux over the land cells of the box from the met friction velocity, Shao & Lu (2000)
+  threshold with the Fécan et al. (1999) soil-moisture increase, constant or mapped clay and
+  bare fractions (`[release.dust]`); species `size.distribution = "kok"` = the Kok (2011)
+  emitted size distribution. Checkpointed; run-end "dust (Kok 2014) budget" line.
+  `docs/DUST_KOK.md`, `configs/example_dust_kok.toml`, `test/test_dust_kok.jl` (19 checks).
+- Sea-spray source: spawned parcels were placed at level index Nk − 0.2, which is the model
+  TOP (level 1 is the surface after the reader's level shift); now the lowest layer (1.2),
+  with the jittered position kept inside the met grid. Any sea-spray run made before this
+  date released its spray at the top of the atmosphere.
+
+## 2026-09-26 — AOD optics validation without transport (validation/check_aod_optics_cams.jl)
+
+- The CAMS aerosol-class optics (table, single-mode and lognormal mass-extinction
+  coefficients, κ-Köhler/Mie wet enhancement) moved to `easlee/src/physics/cams_optics.jl`
+  (transport side, included by Operators).
+- `validation/check_aod_optics_cams.jl`: reads one CAMS analysis (aermr01–20 + aerext532) and
+  the ERA5 file of the same hour (t, q, lnsp), computes the 550-nm column AOD with EASLEE's
+  optics at every grid point and compares it with the CAMS 532-nm extinction column — no
+  parcels, no chemistry, ~100 s. 20 Sept 2025 15 UTC, Africa / SW Indian Ocean window:
+  lognormal σ 2, 3 radii → ratio 1.11, r 0.75 (PASS: 0.7 ≤ ratio ≤ 1.4, r > 0.7);
+  `--dry --size single` → 0.55, r 0.96 (the pre-growth optics).

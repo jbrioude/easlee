@@ -96,6 +96,8 @@ include("../physics/wetdep.jl")
 include("../physics/aerosol.jl")
 include("../physics/species_physics.jl")
 include("../physics/ice_physics.jl")   # transport-phase freezing/sedimentation ([species.ice])
+include("../physics/dust_kok.jl")      # mineral-dust source (Kok et al. 2014) + Kok (2011) size distribution
+include("../physics/cams_optics.jl")   # CAMS aerosol class optics (table, MEC, f(RH); transport side)
 include("../physics/seaspray.jl")      # OSSA sea-spray source (Ovadnevaite et al. 2014) + gust split
 include("../physics/plume_radiation.jl")  # in-plume LW cooling + radiative descent
 include("../physics/transport_tags.jl")   # passive air-mass tags ([tracers]): STE, PBL, …
@@ -262,6 +264,8 @@ export TransportTags, apply_transport_tags!, strat_fraction, pbl_fraction,
 export OSSA_MODES, ossa_reynolds, ossa_mode_fluxes, ossa_number_flux,
        ossa_mass_flux, ossa_dfdlogd, ossa_flux_gusty, seawater_kinematic_viscosity
 export SeaSprayBox, build_seaspray, apply_seaspray!, _ossa_massflux
+export CAMS_AERO, CAMS_AERO_NAMES, cams_aero_optics, _frh_table, _CAMS_AERO_FRH, _cams_aero_frh
+export DustBox, build_dust, apply_dust!, dust_flux_kok, dust_threshold_dry, fecan_moisture_factor, kok_dvdlnd, kok_mass_fractions
 export diagnostic_convection!, DiagConvParams
 export AerosolBins, AerosolModel, AEROSOL_REFRACTIVE
 export apply_settling!, dry_deposition_aerosol!, wet_deposition_aerosol!

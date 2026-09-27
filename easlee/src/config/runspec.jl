@@ -265,6 +265,20 @@ Base.@kwdef mutable struct ReleaseBox
     spray_cd::Float64 = -1.0            # drag coefficient; < 0 → bulk (0.8+0.065·U10)e-3
     spray_gust_sigma::Float64 = 0.0     # sub-grid/gust wind σ [m/s]; 0 = mean-field only
     spray_rho::Float64 = 2017.0         # dry sea-salt density [kg/m³]
+    # ── [release.dust] (kind = "dust"): Kok et al. (2014) mineral-dust source ──
+    # The box reserves the species/relbox; parcels spawn from the Kok flux over
+    # the LAND cells of the box (lsm ≥ 0.5) from u* (met "ustar").  The species
+    # should use size.distribution = "kok" (Kok 2011 emitted size distribution).
+    # mass_per_parcel is REQUIRED (the spawn quantum).
+    dust_clay::Float64 = 0.2            # clay mass fraction of the soil (0–1)
+    dust_bare::Float64 = 1.0            # bare (erodible) fraction of the cell (0–1)
+    dust_w_pct::Float64 = 0.0           # gravimetric soil moisture [%] when the met has no swvl1
+    dust_d_m::Float64 = 127.0e-6        # threshold grain diameter [m] (Shao & Lu 2000)
+    dust_cd0::Float64 = 4.4e-5          # Kok 2014 C_d0
+    dust_ce::Float64 = 2.0              # Kok 2014 C_e
+    dust_calpha::Float64 = 2.7          # Kok 2014 C_α
+    dust_clay_file::String = ""         # NetCDF lon/lat map of the clay fraction (optional)
+    dust_bare_file::String = ""         # NetCDF lon/lat map of the bare fraction (optional)
     # ── [release.chem_init] — release-scoped chemistry initial condition ──────
     # Parcels born from THIS release start with the plume composition, while
     # every other parcel keeps the [chemistry.init] background — the spatial
@@ -784,6 +798,8 @@ function validate_runspec(s::RunSpec; check_paths::Bool=true)
     for sp in s.species
         sp.kind in ("gas", "aerosol") ||
             push!(errs, "species \"$(sp.id)\": kind must be gas|aerosol")
+        sp.kind == "aerosol" && !(sp.size_distribution in ("lognormal", "bins", "kok")) &&
+            push!(errs, "species \"$(sp.id)\": size.distribution must be lognormal|bins|kok")
         sp.kind == "aerosol" && sp.size_distribution == "bins" && length(sp.bin_edges_m) < 2 &&
             push!(errs, "species \"$(sp.id)\": bins distribution needs ≥2 bin_edges_m")
         sp.kind == "aerosol" && sp.refractive_index != "auto" && parse_refractive_index(sp.refractive_index) === nothing &&
@@ -828,8 +844,19 @@ function validate_runspec(s::RunSpec; check_paths::Bool=true)
         r.species in specids ||
             push!(errs, "release[$k]: species \"$(r.species)\" not defined in [[species]]")
         length(r.time) == 2 || push!(errs, "release[$k]: time must be [start, stop]")
-        r.kind in ("release", "domainfill", "inventory", "volcanic", "seaspray") ||
-            push!(errs, "release[$k]: kind must be release|domainfill|inventory|volcanic|seaspray")
+        r.kind in ("release", "domainfill", "inventory", "volcanic", "seaspray", "dust") ||
+            push!(errs, "release[$k]: kind must be release|domainfill|inventory|volcanic|seaspray|dust")
+        if r.kind == "dust"
+            r.mass_per_parcel_kg > 0 ||
+                push!(errs, "release[$k] (dust): mass_per_parcel must be set (the spawn quantum)")
+            (0.0 <= r.dust_clay <= 1.0 && 0.0 <= r.dust_bare <= 1.0) ||
+                push!(errs, "release[$k] (dust): clay and bare must be fractions in [0, 1]")
+            r.dust_w_pct >= 0 || push!(errs, "release[$k] (dust): soil_moisture must be ≥ 0 %")
+            (r.dust_d_m > 0 && r.dust_cd0 > 0) || push!(errs, "release[$k] (dust): threshold_d and cd0 must be > 0")
+            for (f, nm) in ((r.dust_clay_file, "clay_file"), (r.dust_bare_file, "bare_file"))
+                isempty(f) || !check_paths || isfile(f) || push!(errs, "release[$k] (dust): $nm not found: $f")
+            end
+        end
         if r.kind == "seaspray"
             r.mass_per_parcel_kg > 0 ||
                 push!(errs, "release[$k] (seaspray): mass_per_parcel must be set (the spawn quantum)")

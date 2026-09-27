@@ -152,7 +152,7 @@ function dict_to_runspec(d::AbstractDict)::RunSpec
                 parse_mass_kg(r["mass_per_parcel"]) : 0.0
         # seaspray: mass_per_parcel is the SPAWN quantum and `particles` the
         # parcel-pool cap — never derive the count from the (unused) mass
-        rpart = kind == "seaspray" ? Int(_get(r, "particles", 10000)) :
+        rpart = kind in ("seaspray", "dust") ? Int(_get(r, "particles", 10000)) :
                 qpp > 0.0 ? max(1, ceil(Int, rmass / qpp)) : Int(_get(r, "particles", 10000))
         qpp > 0.0 && rpart > 20_000_000 &&
             @warn "mass_per_parcel yields a very large parcel count" release=join(specs, ",") parcels=rpart
@@ -237,6 +237,15 @@ function dict_to_runspec(d::AbstractDict)::RunSpec
                 spray_cd        = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "cd", -1.0)),
                 spray_gust_sigma = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "gust_sigma", 0.0)),
                 spray_rho       = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "rho_dry", 2017.0)),
+                dust_clay       = Float64(_get(_get(r, "dust", Dict{String,Any}()), "clay", 0.2)),
+                dust_bare       = Float64(_get(_get(r, "dust", Dict{String,Any}()), "bare", 1.0)),
+                dust_w_pct      = Float64(_get(_get(r, "dust", Dict{String,Any}()), "soil_moisture", 0.0)),
+                dust_d_m        = _lenget(_get(r, "dust", Dict{String,Any}()), "threshold_d", 127.0e-6),
+                dust_cd0        = Float64(_get(_get(r, "dust", Dict{String,Any}()), "cd0", 4.4e-5)),
+                dust_ce         = Float64(_get(_get(r, "dust", Dict{String,Any}()), "ce", 2.0)),
+                dust_calpha     = Float64(_get(_get(r, "dust", Dict{String,Any}()), "calpha", 2.7)),
+                dust_clay_file  = String(_get(_get(r, "dust", Dict{String,Any}()), "clay_file", "")),
+                dust_bare_file  = String(_get(_get(r, "dust", Dict{String,Any}()), "bare_file", "")),
                 chem_init       = cinit,
                 chem_h2o_plume  = h2o_plume,
             ))
@@ -601,6 +610,8 @@ function runspec_to_dict(s::RunSpec)::Dict{String,Any}
         if sp.kind == "aerosol"
             e["size"] = sp.size_distribution == "bins" ?
                 Dict("distribution"=>"bins", "edges"=>sp.bin_edges_m) :
+                sp.size_distribution == "kok" ?
+                Dict("distribution"=>"kok", "nbins"=>sp.nbins, "edges"=>sp.bin_edges_m) :
                 Dict("distribution"=>"lognormal", "dg"=>sp.dg_m, "sigma_g"=>sp.sigma_g, "nbins"=>sp.nbins)
             e["density"] = sp.density
             e["aerosol_type"] = sp.aerosol_type
@@ -718,6 +729,14 @@ function runspec_to_dict(s::RunSpec)::Dict{String,Any}
                     "mix_exponent" => r.plume_mix_exp)
             end
             e["plume_rise"] = p
+        end
+        if r.kind == "dust"
+            du = Dict{String,Any}("clay" => r.dust_clay, "bare" => r.dust_bare, "soil_moisture" => r.dust_w_pct)
+            r.dust_d_m != 127.0e-6 && (du["threshold_d"] = r.dust_d_m)
+            (r.dust_cd0, r.dust_ce, r.dust_calpha) != (4.4e-5, 2.0, 2.7) && (du["cd0"] = r.dust_cd0; du["ce"] = r.dust_ce; du["calpha"] = r.dust_calpha)
+            isempty(r.dust_clay_file) || (du["clay_file"] = r.dust_clay_file)
+            isempty(r.dust_bare_file) || (du["bare_file"] = r.dust_bare_file)
+            e["dust"] = du
         end
         if r.kind == "seaspray"
             sp = Dict{String,Any}("salinity" => r.spray_salinity, "rho_dry" => r.spray_rho)

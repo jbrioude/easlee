@@ -185,6 +185,36 @@ gust-integrated emissions separately (`transient_enhancement` = their ratio).
 Physics + mode table: `easlee/src/physics/seaspray.jl`; tests:
 `test/test_seaspray.jl`.
 
+### Mineral-dust source (`[[release]] kind = "dust"`)
+
+```toml
+[[species]]
+id = "dust"; kind = "aerosol"; aerosol_type = "dust"; density = 2650.0
+[species.size]
+distribution = "kok"             # Kok (2011) emitted distribution, 8 bins over 0.2–20 µm
+nbins = 8
+
+[[release]]
+species   = "dust"
+kind      = "dust"               # Kok et al. (2014) flux over the LAND cells of the box
+lon = [-15.0, 35.0]; lat = [15.0, 35.0]; z = [0.0, 50.0]; zkind = "agl"
+time = [2025-01-01T12:00:00, 2025-01-02T00:00:00]
+mass_per_parcel = "2000kg"       # spawn quantum (required)
+particles = 400000               # parcel-pool cap
+  [release.dust]
+  clay = 0.15                    # clay mass fraction (0–1), or clay_file = "clay.nc"
+  bare = 1.0                     # erodible fraction (0–1), or bare_file = "bare.nc"
+  soil_moisture = 0.5            # gravimetric %, used when the met has no swvl1
+  # threshold_d = "127um"; cd0 = 4.4e-5; ce = 2.0; calpha = 2.7   (Kok 2014 defaults)
+```
+
+Per land cell (lsm ≥ 0.5) and step: F_d = C_d f_bare f_clay ρ_a (u*² − u*_t²)/u*_st
+(u*/u*_t)^(C_α(u*_st − u*_st0)/u*_st0) from the met friction velocity `ustar`, the Shao & Lu
+(2000) threshold with the Fécan et al. (1999) soil-moisture increase; parcels of one quantum
+spawn at the surface as the cell accumulator fills.  Run-end line "dust (Kok 2014) budget".
+Physics: `easlee/src/physics/dust_kok.jl`, `docs/DUST_KOK.md`; test `test/test_dust_kok.jl`;
+example `configs/example_dust_kok.toml`.
+
 ### In-flight species conversion (`[species.convert]`)
 
 ```toml

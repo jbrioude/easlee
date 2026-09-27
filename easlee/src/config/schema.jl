@@ -60,7 +60,7 @@ function schema_fields()::Vector{Field}
     push!(F, Field("species[].aerosol_type", "enum", "dust", "Species", "Aerosol type (κ + refractive index defaults)";
                    options=["dust","sulfate","bc","oc","seasalt","ash","water"], visible_if="species[].kind==aerosol"))
     push!(F, Field("species[].size.distribution", "enum", "lognormal", "Species", "Size distribution";
-                   options=["lognormal","bins"], visible_if="species[].kind==aerosol"))
+                   options=["lognormal","bins","kok"], visible_if="species[].kind==aerosol"))   # kok = Kok (2011) emitted dust distribution over 0.2–20 µm
     push!(F, Field("species[].size.dg", "string", "1um", "Species", "Lognormal median diameter"; unit="length", visible_if="species[].kind==aerosol"))
     push!(F, Field("species[].size.sigma_g", "number", 2.0, "Species", "Geometric standard deviation"; visible_if="species[].kind==aerosol"))
     push!(F, Field("species[].size.nbins", "int", 8, "Species", "Number of size bins"; visible_if="species[].kind==aerosol"))
@@ -89,7 +89,16 @@ function schema_fields()::Vector{Field}
 
     push!(F, Field("release[].species", "string", "spec1", "Release", "Species id released"))
     push!(F, Field("release[].kind", "enum", "release", "Release", "release = emit from the geometry; domainfill = fill the box ∝ air mass + edge inflow; inventory = gridded emission inventory (from_file); volcanic = time-resolved eruption column at the vent; seaspray = met-driven OSSA sea-spray source over the ocean cells of the box (Ovadnevaite et al. 2014; needs mass_per_parcel)";
-                   options=["release","domainfill","inventory","volcanic","seaspray"]))
+                   options=["release","domainfill","inventory","volcanic","seaspray","dust"]))
+    push!(F, Field("release[].dust.clay", "number", 0.2, "Release", "Clay mass fraction of the soil (0–1), the dust-producing fraction (Kok et al. 2014)"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.bare", "number", 1.0, "Release", "Bare (erodible) fraction of the cell (0–1): vegetation / roughness masking"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.soil_moisture", "number", 0.0, "Release", "Gravimetric soil moisture [%] used when the met carries no swvl1 (Fécan et al. 1999 threshold increase)"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.threshold_d", "string", "127um", "Release", "Grain diameter of the fluid threshold (Shao & Lu 2000)"; unit="length", visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.cd0", "number", 4.4e-5, "Release", "Kok et al. (2014) C_d0"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.ce", "number", 2.0, "Release", "Kok et al. (2014) C_e"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.calpha", "number", 2.7, "Release", "Kok et al. (2014) C_α"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.clay_file", "string", "", "Release", "NetCDF lon/lat map of the clay fraction (variables lon, lat, clay); empty = constant"; visible_if="release[].kind==dust"))
+    push!(F, Field("release[].dust.bare_file", "string", "", "Release", "NetCDF lon/lat map of the bare fraction (variables lon, lat, bare); empty = constant"; visible_if="release[].kind==dust"))
     push!(F, Field("release[].seaspray.sst", "number", -1.0, "Release", "Sea-surface temperature [K] for the wave Reynolds number; -1 = met 2t per cell"; visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].seaspray.salinity", "number", 35.0, "Release", "Salinity [‰] (seawater viscosity → Re_Hw)"; visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].seaspray.hs", "number", -1.0, "Release", "Significant wave height [m]; -1 = fully-developed Pierson–Moskowitz H_s = 0.0246·U10²"; visible_if="release[].kind==seaspray"))

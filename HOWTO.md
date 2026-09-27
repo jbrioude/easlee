@@ -383,6 +383,20 @@ More in [`docs/OUTPUT_GRID.md`](docs/OUTPUT_GRID.md).
 
 ---
 
+## 7.3 Checking the aerosol optics against CAMS (no run needed)
+
+```bash
+julia --project=easlee validation/check_aod_optics_cams.jl \
+      --cams /path/cams_20250920_1200_3.grib --era5 /path/IFS_EA_MET_20250920_600_9.grb
+```
+
+takes one CAMS aerosol analysis (mixing ratios of the 16 classes on 25 pressure levels plus
+the 532-nm extinction the CAMS system computed itself) and the ERA5 file of the same hour
+(temperature, humidity, surface pressure), evaluates EASLEE's own optics — per-class
+lognormal size distribution, κ-Köhler growth at the ERA5 humidity, Mie extinction — on every
+column, and reports the mean ratio and spatial correlation against CAMS. About 100 s, no
+parcels. Options: `--size single`, `--sigma`, `--nodes`, `--dry`, `--window lon0,lon1,lat0,lat1`.
+
 ## 8. Where to look next
 
 | topic | file |

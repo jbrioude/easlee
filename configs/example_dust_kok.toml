@@ -1,0 +1,68 @@
+# Mineral dust from the Kok et al. (2014) emission scheme over a Sahara box, with the
+# Kok (2011) emitted size distribution on 8 bins (0.2–20 µm), settling and deposition on.
+# Inputs per land cell: u* (ERA5 zust), air density from sp/2t, constant clay and bare
+# fractions (replace by maps with dust.clay_file / dust.bare_file), soil moisture from the
+# met swvl1 when the namelist carries it, else the constant below.  The run-end
+# "dust (Kok 2014) budget" line reports the emitted mass and the largest cell flux.
+#
+#     julia --project=easlee scripts/easlee.jl configs/example_dust_kok.toml
+name = "example_dust_kok"
+task = "transport"
+
+[run]
+direction = "forward"
+start     = 2025-01-01T12:00:00
+stop      = 2025-01-02T00:00:00
+timestep  = "15min"
+threads   = 6
+benchmark = true
+
+[[meteorology]]
+model     = "ERA5"
+path      = "/data/ERA5_full/"
+variables = "ERA5_FULL"               # _SFC_ companions carry 2t/lsm/zust/sp
+available = "auto"
+crop      = [-20.0, 40.0, 5.0, 40.0]
+
+[[species]]
+id   = "dust"
+kind = "aerosol"
+aerosol_type = "dust"
+density = 2650.0
+wet_deposition = true
+dry_deposition = true
+settling = true
+[species.size]
+distribution = "kok"                 # Kok (2011) brittle-fragmentation distribution
+nbins = 8                            # log-spaced over 0.2–20 µm
+
+[[release]]
+species   = "dust"
+kind      = "dust"
+lon = [-15.0, 35.0]
+lat = [15.0, 35.0]
+z   = [0.0, 50.0]
+zkind = "agl"
+time = [2025-01-01T12:00:00, 2025-01-02T00:00:00]
+mass_per_parcel = "20000kg"          # spawn quantum (a 2 t quantum filled a 200 000-parcel pool in 3 h over this box)
+particles = 400000                   # parcel-pool cap for the run
+[release.dust]
+clay = 0.15
+bare = 1.0
+soil_moisture = 0.5                  # gravimetric %, when the met carries no swvl1
+
+[output]
+quantity = "concentration"
+interval = "3h"
+average  = "3h"
+sample   = "15min"
+path     = "results/example_dust_kok/"
+[output.grid]
+crs  = "lonlat"
+lon0 = -20.0
+lat0 = 5.0
+dx   = 0.5
+dy   = 0.5
+nx   = 120
+ny   = 70
+heights = [0.0, 100.0, 500.0, 1000.0, 2000.0, 4000.0]
