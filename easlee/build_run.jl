@@ -1194,7 +1194,7 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
         ssb = EASLEE.Operators.build_seaspray(ctx, rt.metfields2D[1], b, spec.release[kr])
         ssb === nothing && continue
         push!(ssprays, ssb)
-        @info "sea-spray source armed (OSSA)" species=spec.release[kr].species ocean_cells=length(ssb.ii) quantum_kg=ssb.quantum gust_sigma_ms=ssb.gust_sigma
+        @info "sea-spray source armed (OSSA)" species=spec.release[kr].species ocean_cells=length(ssb.ii) quantum_kg=ssb.quantum
     end
     # Kok et al. (2014) dust sources (kind = "dust"): land cells scanned on the first
     # step; optional clay/bare maps read here (NetCDF lon/lat/<var>)
@@ -2287,7 +2287,7 @@ function _checkpoint_save(path::AbstractString, rt, obj, spec, d::DateTime, seed
          chk[:tag_agp] = copy(obj.tagphys.age_pbl);
          chk[:tag_cv] = copy(obj.tagphys.conv_count))
     isempty(obj.ssprays) ||
-        (chk[:spray] = [(copy(b.acc), b.emitted[], b.emitted_mean[], b.emitted_gusty[], b.nspawn[])
+        (chk[:spray] = [(copy(b.acc), b.emitted[], b.nspawn[])
                         for b in obj.ssprays])
     isempty(obj.dusts) ||
         (chk[:dust] = [(copy(b.acc), b.emitted[], b.nspawn[], b.flux_max[]) for b in obj.dusts])
@@ -2459,8 +2459,7 @@ function _checkpoint_load!(rt, obj, spec, path::AbstractString, seeded)::DateTim
     if haskey(chk, :spray)
         for (b, sv) in zip(obj.ssprays, chk[:spray])
             length(b.acc) == length(sv[1]) && (b.acc .= sv[1])
-            b.emitted[] = sv[2]; b.emitted_mean[] = sv[3]
-            b.emitted_gusty[] = sv[4]; b.nspawn[] = sv[5]
+            b.emitted[] = sv[2]; b.nspawn[] = sv[3]
         end
     end
     EASLEE.State.sync_dtime_ns!(st)
@@ -2942,8 +2941,7 @@ function run_spec!(spec::EasleeConfig.RunSpec; prefetch::Bool=true, verbose::Boo
         @info "dust (Kok 2014) budget" spawned_parcels=db.nspawn[] emitted_kg=round(db.emitted[], sigdigits=4) land_cells=length(db.ii) max_cell_flux_kg_m2_s=round(db.flux_max[], sigdigits=3) unspawned_kg=round(sum(db.acc; init=0.0), sigdigits=3)
     end
     for ssb in ssprays
-        enh = ssb.emitted_mean[] > 0 ? ssb.emitted_gusty[] / ssb.emitted_mean[] : 1.0
-        @info "sea spray (OSSA) budget" spawned_parcels=ssb.nspawn[] emitted_kg=round(ssb.emitted[], sigdigits=4) mean_field_kg=round(ssb.emitted_mean[], sigdigits=4) gust_integrated_kg=round(ssb.emitted_gusty[], sigdigits=4) transient_enhancement=round(enh, digits=3)
+        @info "sea spray (OSSA) budget" spawned_parcels=ssb.nspawn[] emitted_kg=round(ssb.emitted[], sigdigits=4) unspawned_kg=round(sum(ssb.acc; init=0.0), sigdigits=3)
     end
     if obj.pradphys !== nothing
         pr = obj.pradphys

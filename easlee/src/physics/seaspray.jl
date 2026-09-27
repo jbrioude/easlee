@@ -21,15 +21,6 @@
 # U10 ≈ 3.7 m s⁻¹ at H_s = 1.23 m, SST = 9 °C), 2×10⁵ for the supermicron
 # mode 5.  Validity: derived from 15 nm–6 µm dry diameter, U10 up to ~18 m/s.
 #
-# MEAN vs TRANSIENT decomposition (this model's extension): the flux is
-# strongly nonlinear in the wind, so sub-grid/gust variability contributes
-# beyond the mean-field flux — most where the mean wind is low (< 10–15 m/s)
-# and the threshold truncates the PDF's lower tail.  `ossa_flux_gusty`
-# integrates the mode fluxes over a Gaussian wind distribution
-# N(U10_mean, σ_gust) by Gauss–Hermite quadrature and reports BOTH the
-# mean-field flux and the gust-integrated flux, so the transient enhancement
-# ⟨F⟩/F(Ū) is a first-class diagnostic, not a hidden correction.
-#
 # Auxiliary closures (each replaceable by archived met fields when available):
 #   ν_w(SST, S)  — Sharqawy, Lienhard & Zubair (2010) seawater correlation
 #                  (reproduces the paper's reference ν = 1.34e-6 at 9 °C, 35 ‰);
@@ -135,68 +126,14 @@ function ossa_dfdlogd(D_m::Real, re_hw::Real)
     return s
 end
 
-# ── Mean-field vs transient decomposition ────────────────────────────────────
-
-# 8-point Gauss–Hermite nodes/weights for ∫ f(x)·N(0,1) dx
-const _GH8_X = (-2.9306374202572440, -1.9816567566958429, -1.1571937124467802,
-                -0.3811869902073221,  0.3811869902073221,  1.1571937124467802,
-                 1.9816567566958429,  2.9306374202572440)
-const _GH8_W = (1.9960407221136762e-4, 1.7077983007413475e-2,
-                2.0780232581489188e-1, 6.6114701255824129e-1,
-                6.6114701255824129e-1, 2.0780232581489188e-1,
-                1.7077983007413475e-2, 1.9960407221136762e-4)
-const _GH8_NORM = sqrt(π)
-
-"""
-    ossa_flux_gusty(u10_mean, sigma_u, sst_K; hs=nothing, cd=nothing,
-                    salinity_permil=35) → (mean = F̄, gusty = ⟨F⟩, modes = ...)
-
-The OSSA mode fluxes evaluated (a) at the MEAN wind (the resolved / mean-field
-contribution: wind + wave state) and (b) integrated over a Gaussian wind
-distribution N(u10_mean, sigma_u) by 8-point Gauss–Hermite quadrature (the
-TRANSIENT contribution: sub-grid variability, gustiness).  The nonlinearity
-F ∝ (Re − Re₀)^b with Re ∝ u²·√Cd(u) makes ⟨F⟩ > F(ū), most strongly at low
-mean winds where part of the distribution sits below the production
-threshold while the mean is above it — or vice versa.
-
-When `hs` is supplied (archived wave field) it is held at its MEAN-state
-value inside the quadrature: waves respond to the wind history, not to the
-gusts — exactly the mean/transient separation this decomposition is for.
-With the Pierson–Moskowitz fallback H_s(u) responds fully (worst case).
-
-Returns per-mode and total number fluxes for both evaluations, so the
-enhancement ⟨F⟩/F̄ is available as a diagnostic per mode.
-"""
-function ossa_flux_gusty(u10_mean::Real, sigma_u::Real, sst_K::Real;
-                         hs = nothing, cd = nothing, salinity_permil::Real = 35.0)
-    ū  = max(Float64(u10_mean), 0.0)
-    σu = max(Float64(sigma_u), 0.0)
-    Fm = ossa_mode_fluxes(ossa_reynolds(ū, sst_K; hs, cd, salinity_permil))
-    if σu == 0.0
-        return (mean = sum(Fm), gusty = sum(Fm), modes_mean = Fm, modes_gusty = Fm)
-    end
-    hs_fixed = hs === nothing ? nothing : hs   # wave state frozen at the mean
-    acc = ntuple(_ -> 0.0, OSSA_NMODES)
-    for k in eachindex(_GH8_X)
-        u  = max(ū + sqrt(2.0) * σu * _GH8_X[k], 0.0)
-        Fk = ossa_mode_fluxes(ossa_reynolds(u, sst_K;
-                                            hs = hs_fixed, cd, salinity_permil))
-        w  = _GH8_W[k] / _GH8_NORM
-        acc = ntuple(i -> acc[i] + w * Fk[i], OSSA_NMODES)
-    end
-    return (mean = sum(Fm), gusty = sum(acc), modes_mean = Fm, modes_gusty = acc)
-end
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Engine source term ([[release]] kind = "seaspray")
 #
 # The release box reserves a relbox for species attribution (0 scheduled
 # particles/mass); build_seaspray precomputes the ocean cells (met grid ∩ box,
-# lsm < 0.5) once, and apply_seaspray! runs each transport step: OSSA mass
-# flux per cell — mean-field AND gust-integrated when gust_sigma > 0 — is
-# accumulated, and a parcel of one mass quantum is spawned at the surface of
-# a cell whenever its accumulator fills.  The mean-field and gust-integrated
-# emissions are tracked SEPARATELY (the transient-enhancement diagnostic).
+# lsm < 0.5) once, and apply_seaspray! runs each transport step: the OSSA
+# dry-mass flux per cell × area × Δt is accumulated, and a parcel of one mass
+# quantum is spawned at the surface of a cell whenever its accumulator fills.
 # ─────────────────────────────────────────────────────────────────────────────
 
 struct SeaSprayBox
@@ -215,11 +152,8 @@ struct SeaSprayBox
     salinity::Float64                        # ‰
     hs::Float64                              # m; < 0 → Pierson–Moskowitz
     cd::Float64                              # < 0 → bulk (0.8 + 0.065·U10)e-3
-    gust_sigma::Float64                      # m/s; 0 = mean-field only
     rho_dry::Float64                         # dry sea-salt density [kg/m³]
     emitted::Base.RefValue{Float64}          # actually spawned mass [kg]
-    emitted_mean::Base.RefValue{Float64}     # mean-field-only counterfactual [kg]
-    emitted_gusty::Base.RefValue{Float64}    # gust-integrated production [kg]
     nspawn::Base.RefValue{Int}
 end
 
@@ -253,8 +187,8 @@ function build_seaspray(ctx, m2::AbstractDict, relbox::Integer, r; nest::Int = 1
                        Ref(false), Int32[], Int32[], Float64[], Float64[], q,
                        r.time[1], r.time[2],
                        r.spray_sst, r.spray_salinity, r.spray_hs, r.spray_cd,
-                       r.spray_gust_sigma, r.spray_rho,
-                       Ref(0.0), Ref(0.0), Ref(0.0), Ref(0))
+                       r.spray_rho,
+                       Ref(0.0), Ref(0))
 end
 
 # Ocean-cell scan, deferred to the first apply (the met is read by then).
@@ -284,7 +218,7 @@ end
     _u10_from_ustar(ustar) → U10 [m/s]
 
 Invert the neutral bulk drag law u* = √(C_d)·U10 with the OSSA C_d =
-(0.8 + 0.065·U10)·10⁻³ (Large & Pond form, as used in ossa_flux_gusty).
+(0.8 + 0.065·U10)·10⁻³ (Large & Pond form, as used in ossa_reynolds).
 Monotone in U10; a few fixed-point iterations converge to <1e-4 rel.
 """
 @inline function _u10_from_ustar(ustar::Float64)
@@ -301,8 +235,7 @@ end
     apply_seaspray!(state, ctx, m2raw, ssb, d, indt, dt_s; nest=1, rng) → nspawned
 
 One source step: per ocean cell, the OSSA dry-mass flux × area × dt is added
-to the cell accumulator (gust-integrated when gust_sigma > 0; the mean-field
-counterfactual is tracked in parallel), and parcels of one quantum spawn at
+to the cell accumulator, and parcels of one quantum spawn at
 the cell surface while the accumulator holds one.
 """
 function apply_seaspray!(state::State.ParcelState, ctx, m2::AbstractDict,
@@ -335,15 +268,8 @@ function apply_seaspray!(state::State.ParcelState, ctx, m2::AbstractDict,
         sst = t2m === nothing ? abs(ssb.sst) : Float64(t2m[i, j, it])
         hs  = ssb.hs < 0 ? nothing : ssb.hs
         cd  = ssb.cd < 0 ? nothing : ssb.cd
-        g   = ossa_flux_gusty(u10, ssb.gust_sigma, sst;
-                              hs = hs, cd = cd, salinity_permil = ssb.salinity)
-        Mm  = _ossa_massflux(g.modes_mean,  ssb.rho_dry)
-        Mg  = _ossa_massflux(g.modes_gusty, ssb.rho_dry)
-        dm_mean  = Mm * ssb.area[c] * dt_s
-        dm_gusty = Mg * ssb.area[c] * dt_s
-        ssb.emitted_mean[]  += dm_mean
-        ssb.emitted_gusty[] += dm_gusty
-        ssb.acc[c] += ssb.gust_sigma > 0 ? dm_gusty : dm_mean
+        re  = ossa_reynolds(u10, sst; hs = hs, cd = cd, salinity_permil = ssb.salinity)
+        ssb.acc[c] += ossa_mass_flux(re; rho_dry = ssb.rho_dry) * ssb.area[c] * dt_s
         while ssb.acc[c] >= ssb.quantum
             slot = _df_next_free(state, slot)
             slot == 0 && return nsp                   # parcel pool exhausted

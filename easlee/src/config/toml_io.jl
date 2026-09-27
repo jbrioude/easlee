@@ -235,7 +235,6 @@ function dict_to_runspec(d::AbstractDict)::RunSpec
                 spray_salinity  = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "salinity", 35.0)),
                 spray_hs        = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "hs", -1.0)),
                 spray_cd        = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "cd", -1.0)),
-                spray_gust_sigma = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "gust_sigma", 0.0)),
                 spray_rho       = Float64(_get(_get(r, "seaspray", Dict{String,Any}()), "rho_dry", 2017.0)),
                 dust_clay       = Float64(_get(_get(r, "dust", Dict{String,Any}()), "clay", 0.2)),
                 dust_bare       = Float64(_get(_get(r, "dust", Dict{String,Any}()), "bare", 1.0)),
@@ -743,7 +742,6 @@ function runspec_to_dict(s::RunSpec)::Dict{String,Any}
             r.spray_sst >= 0 && (sp["sst"] = r.spray_sst)
             r.spray_hs  >= 0 && (sp["hs"]  = r.spray_hs)
             r.spray_cd  >= 0 && (sp["cd"]  = r.spray_cd)
-            r.spray_gust_sigma > 0 && (sp["gust_sigma"] = r.spray_gust_sigma)
             e["seaspray"] = sp
         end
         if !isempty(r.from_file)

@@ -103,7 +103,6 @@ function schema_fields()::Vector{Field}
     push!(F, Field("release[].seaspray.salinity", "number", 35.0, "Release", "Salinity [‰] (seawater viscosity → Re_Hw)"; visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].seaspray.hs", "number", -1.0, "Release", "Significant wave height [m]; -1 = fully-developed Pierson–Moskowitz H_s = 0.0246·U10²"; visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].seaspray.cd", "number", -1.0, "Release", "Wave drag coefficient; -1 = bulk (0.8 + 0.065·U10)×10⁻³"; visible_if="release[].kind==seaspray"))
-    push!(F, Field("release[].seaspray.gust_sigma", "number", 0.0, "Release", "Sub-grid/gust wind σ [m/s]: the flux integrates over N(U10, σ) — the transient contribution beyond the mean fields (largest below ~10-15 m/s mean wind); 0 = mean-field only"; visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].seaspray.rho_dry", "number", 2017.0, "Release", "Dry sea-salt density for the mass flux"; unit="kg/m3", visible_if="release[].kind==seaspray"))
     push!(F, Field("release[].chem_init.so2_ppb", "number", 0.0, "Release", "Release-scoped chemistry IC: plume SO2 [ppb] on THIS release's parcels only (→ per-parcel sulfate SAD); every other parcel keeps the [chemistry.init] background. Needs [chemistry].sulfate_sad"; unit="ppb"))
     push!(F, Field("release[].chem_init.so4_ugm3", "number", 0.0, "Release", "Release-scoped chemistry IC: plume sulfate loading [µg/m³] on this release's parcels (→ SAD). Needs [chemistry].sulfate_sad"; unit="ug/m3"))

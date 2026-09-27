@@ -1,8 +1,6 @@
 # Sea-spray aerosol from the OSSA source function (Ovadnevaite et al. 2014)
-# over a Pacific box, with the mean/transient gust decomposition ON:
-# the run-end "sea spray (OSSA) budget" line reports the mean-field and
-# gust-integrated emissions separately (their ratio = the transient
-# enhancement — largest below ~10-15 m/s mean wind).
+# over a Pacific box: the run-end "sea spray (OSSA) budget" line reports the
+# spawned parcels, the emitted mass and the unspawned remainder.
 #
 #     julia --project=easlee scripts/easlee.jl configs/example_seaspray.toml
 name = "example_seaspray"
@@ -46,7 +44,6 @@ time = [2025-01-01T12:00:00, 2025-01-02T00:00:00]
 particles = 40000                     # parcel-pool CAP for the spawned spray
 mass_per_parcel = "10t"               # ~1.5e8 kg over the box·12 h → ~15k parcels
   [release.seaspray]
-  gust_sigma = 1.5
 
 [physics]
 turbulence = "hanna"

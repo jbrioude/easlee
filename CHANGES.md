@@ -368,3 +368,11 @@ in the developer tree.
   parcels, no chemistry, ~100 s. 20 Sept 2025 15 UTC, Africa / SW Indian Ocean window:
   lognormal σ 2, 3 radii → ratio 1.11, r 0.75 (PASS: 0.7 ≤ ratio ≤ 1.4, r > 0.7);
   `--dry --size single` → 0.55, r 0.96 (the pre-growth optics).
+
+## 2026-09-27 — sea-spray source: single OSSA flux evaluation per cell
+
+- `easlee/src/physics/seaspray.jl`: the flux is the published Ovadnevaite et al. (2014) function
+  evaluated once per ocean cell and step; a development-only option and its config key were
+  removed. Spawned parcels now sit in the surface layer (fix of 2026-09-25); the test checks it.
+- `test/test_source_mass_quantum.jl`: the spawned parcel mass plus the unspawned remainder
+  equals the flux integrated independently over the cells and steps, for both sources.

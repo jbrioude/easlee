@@ -167,7 +167,6 @@ lon = [160.0, 200.0] ; lat = [-40.0, -10.0]   # ocean cells inside this box
 time = [2025-05-21T03:00:00, 2025-05-22T03:00:00]
 mass_per_parcel = "50kg"         # REQUIRED: the spawn quantum
   [release.seaspray]
-  gust_sigma = 1.5               # sub-grid/gust wind σ [m/s]; 0 = mean-field only
   # sst      = 288.0             # K; omit = met 2t per cell
   # hs       = 2.0               # m; omit = Pierson–Moskowitz from U10
   # cd       = 1.5e-3            # omit = bulk (0.8+0.065·U10)e-3
@@ -177,11 +176,8 @@ The five-modal OSSA flux (wave Reynolds number Re_Hw = u*·H_s/ν_w — wind,
 wave state, SST/salinity through the seawater viscosity) is evaluated every
 transport step on the ocean cells (`lsm < 0.5`) of the box, from the archived
 `10u/10v` (+ `2t`); the accumulated dry-mass per cell spawns surface parcels
-of one quantum each.  With `gust_sigma > 0` the flux is integrated over
-N(U10, σ) (Gauss–Hermite) — the TRANSIENT contribution beyond the mean
-fields, dominant below ~10–15 m/s mean wind where the production threshold
-truncates the wind PDF.  The run-end budget line reports the mean-field and
-gust-integrated emissions separately (`transient_enhancement` = their ratio).
+of one quantum each.  The run-end budget line reports the spawned parcels, the emitted mass and
+the unspawned remainder.
 Physics + mode table: `easlee/src/physics/seaspray.jl`; tests:
 `test/test_seaspray.jl`.
 

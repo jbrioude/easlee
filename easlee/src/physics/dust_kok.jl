@@ -88,10 +88,13 @@ density `rho_a`; 0 when u* ≤ u*_t.
 """
 function dust_flux_kok(ustar::Real, rho_a::Real; clay::Real = 0.2, bare::Real = 1.0,
                        w_pct::Real = 0.0, D::Real = 127.0e-6,
-                       cd0::Real = KOK_CD0, ce::Real = KOK_CE, calpha::Real = KOK_CALPHA)
+                       cd0::Real = KOK_CD0, ce::Real = KOK_CE, calpha::Real = KOK_CALPHA,
+                       ut::Union{Nothing,Real} = nothing)
     us = Float64(ustar); ra = Float64(rho_a)
     (isfinite(us) && isfinite(ra) && us > 0 && ra > 0) || return 0.0
-    ut  = dust_threshold_dry(ra; D = D) * fecan_moisture_factor(w_pct, clay)
+    # `ut` = an explicit fluid threshold [m/s] (verification against the published curves at
+    # fixed u*_st); default = Shao & Lu (2000) at D with the Fécan et al. (1999) moisture increase
+    ut  = ut === nothing ? dust_threshold_dry(ra; D = D) * fecan_moisture_factor(w_pct, clay) : Float64(ut)
     us <= ut && return 0.0
     ust = ut * sqrt(ra / KOK_RHOA0)
     x   = (ust - KOK_UST0) / KOK_UST0

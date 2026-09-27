@@ -263,7 +263,6 @@ Base.@kwdef mutable struct ReleaseBox
     spray_salinity::Float64 = 35.0      # ‰ (viscosity → Re_Hw)
     spray_hs::Float64 = -1.0            # significant wave height [m]; < 0 → Pierson–Moskowitz
     spray_cd::Float64 = -1.0            # drag coefficient; < 0 → bulk (0.8+0.065·U10)e-3
-    spray_gust_sigma::Float64 = 0.0     # sub-grid/gust wind σ [m/s]; 0 = mean-field only
     spray_rho::Float64 = 2017.0         # dry sea-salt density [kg/m³]
     # ── [release.dust] (kind = "dust"): Kok et al. (2014) mineral-dust source ──
     # The box reserves the species/relbox; parcels spawn from the Kok flux over
@@ -860,8 +859,6 @@ function validate_runspec(s::RunSpec; check_paths::Bool=true)
         if r.kind == "seaspray"
             r.mass_per_parcel_kg > 0 ||
                 push!(errs, "release[$k] (seaspray): mass_per_parcel must be set (the spawn quantum)")
-            r.spray_gust_sigma >= 0 ||
-                push!(errs, "release[$k] (seaspray): gust_sigma must be ≥ 0")
             r.spray_salinity > 0 ||
                 push!(errs, "release[$k] (seaspray): salinity must be > 0 ‰")
         end

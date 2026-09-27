@@ -46,12 +46,13 @@ ice  = EASLEE.IcePhysics([true], Float32[1.5], Float32[20e-6], Float32[500],
 ssb  = EASLEE.Operators.SeaSprayBox(Int32(1), 0.0, 10.0, 0.0, 10.0, Ref(true),
                                     Int32[1], Int32[1], [1.0e8], [123.0], 50.0,
                                     DateTime(2022,1,15), DateTime(2022,1,16),
-                                    -1.0, 35.0, -1.0, -1.0, 0.0, 2017.0,
-                                    Ref(1.0e4), Ref(9.0e3), Ref(1.1e4), Ref(200))
+                                    -1.0, 35.0, -1.0, -1.0, 2017.0,
+                                    Ref(1.0e4), Ref(200))
 # mirror the RunObjects fields _checkpoint_save/_load! touch (convphys/pradphys
 # added with [species.convert] / [physics.plume_radiation]; nothing = feature off)
 mkobj() = (chemstate = nothing, icephys = ice, convphys = nothing,
-           pradphys = nothing, tagphys = nothing, ssprays = [ssb])
+           pradphys = nothing, tagphys = nothing, ssprays = [ssb],
+           dusts = EASLEE.Operators.DustBox[])   # kind="dust" sources (2026-09-25)
 
 println("="^78)
 println("[1] save → load round-trip (bit-exact)")

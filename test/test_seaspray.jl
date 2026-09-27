@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # test_seaspray.jl — OSSA sea-spray source function (Ovadnevaite et al. 2014)
-# + the mean/transient (gust) decomposition:
+#
 #   [1] seawater viscosity: reproduces the paper's reference ν = 1.34e-6 m²/s
 #       at 9 °C / 35 ‰; SST/salinity monotonicity,
 #   [2] Re_Hw and thresholds: onset near the paper's U10 ≈ 3.7 m/s at
@@ -8,9 +8,6 @@
 #   [3] mode fluxes: Table-1 power laws exact; total submicron flux magnitude
 #       at Re = 3.1e6 in the Fig. 4 range; dF/dlogD five-modal + integrates
 #       back to the total,
-#   [4] gust decomposition: σ_u = 0 identity; enhancement > 1 near threshold;
-#       enhancement decays with mean wind (the < 10–15 m/s preliminary
-#       result); frozen-wave vs responsive-wave ordering.
 #
 #   julia --project=easlee test/test_seaspray.jl
 using Printf
@@ -23,7 +20,7 @@ include(joinpath(REPO, "easlee", "src", "io", "tools.jl"))
 include(joinpath(REPO, "easlee", "src", "io", "output.jl"))
 include(joinpath(REPO, "easlee", "EASLEE.jl")); using .EASLEE
 using .EASLEE: OSSA_MODES, ossa_reynolds, ossa_mode_fluxes, ossa_number_flux,
-               ossa_mass_flux, ossa_dfdlogd, ossa_flux_gusty,
+               ossa_mass_flux, ossa_dfdlogd,
                seawater_kinematic_viscosity
 using .EASLEE.Operators: _u10_from_ustar
 
@@ -89,29 +86,9 @@ check("mass flux positive and mode-5 dominated",
 
 println()
 println("="^78)
-println("[4] mean vs transient (gust) decomposition")
+println("[4] u* ↔ U10 drag-law inversion")
 println("="^78)
 sst = 273.15 + 9.0
-g0 = ossa_flux_gusty(8.0, 0.0, sst)
-check("σ_u = 0: gusty ≡ mean", g0.gusty == g0.mean)
-# near the threshold the mean wind alone produces ~nothing; gusts switch it on
-glo = ossa_flux_gusty(3.0, 1.5, sst)
-check("below-threshold mean + gusts → production switched ON",
-      glo.mean == 0.0 ? glo.gusty > 0.0 : glo.gusty / glo.mean > 1.5,
-      info=@sprintf("mean %.3g gusty %.3g", glo.mean, glo.gusty))
-# enhancement decreases with mean wind (the user's <10–15 m/s regime)
-enh(u) = (r = ossa_flux_gusty(u, 1.5, sst); r.gusty / max(r.mean, eps()))
-e5, e10, e20 = enh(5.0), enh(10.0), enh(20.0)
-check("gust enhancement decays with mean wind (5 > 10 > 20 m/s)",
-      e5 > e10 > e20 && e20 < 1.2,
-      info=@sprintf("%.2f / %.2f / %.2f", e5, e10, e20))
-# frozen wave state (archived Hs) responds less than the PM fallback
-gfroz = ossa_flux_gusty(6.0, 2.0, sst; hs=0.0246 * 36.0)
-gresp = ossa_flux_gusty(6.0, 2.0, sst)
-check("frozen-wave gust response ≤ responsive-wave (PM) response",
-      gfroz.gusty / gfroz.mean <= gresp.gusty / gresp.mean * 1.001,
-      info=@sprintf("%.3f vs %.3f", gfroz.gusty / gfroz.mean,
-                    gresp.gusty / gresp.mean))
 # U10 ← u* inversion (surface archives with zust but no 10 m winds): round-trips
 # the forward drag law u* = √(C_d)·U10, C_d = (0.8 + 0.065·U10)e-3
 cd_fwd(U) = (0.8 + 0.065 * U) * 1e-3
@@ -140,9 +117,9 @@ m2 = Dict("lsm" => lsm,
           "2t"  => fill(273.15f0 + 9.0f0, 360, 180, 2))
 fctx = (nests = [(gridconfig = G, levelconfig = LC)],)
 t1 = DateTime(2025, 5, 1); t2 = DateTime(2025, 5, 2)
-mkrel(; q=2.0e3, gs=0.0) = EasleeConfig.ReleaseBox(
+mkrel(; q=2.0e3) = EasleeConfig.ReleaseBox(
     species="ss", kind="seaspray", lon=[10.0, 14.0], lat=[2.0, 8.0],
-    time=[t1, t2], mass_per_parcel_kg=q, spray_gust_sigma=gs)
+    time=[t1, t2], mass_per_parcel_kg=q)
 ssb = build_seaspray(fctx, m2, 3, mkrel())
 check("build defers the cell scan (met unread at build time)",
       ssb !== nothing && isempty(ssb.ii) && !ssb.initialized[])
@@ -168,16 +145,9 @@ check("parcels spawned = Σ per-cell ⌊acc/quantum⌋, residuals carried",
 sp1 = findfirst(==(0x01), st.status)
 check("spawned parcel: relbox, quantum mass, surface level",
       sp1 !== nothing && st.relbox[sp1] == Int32(3) &&
-      st.mass[sp1] == Float32(ssb.quantum) && st.indl[sp1] > 9.0f0)
+      st.mass[sp1] == Float32(ssb.quantum) && st.indl[sp1] < 2.0f0)   # level 1 = surface
 check("outside the release window: no production",
       apply_seaspray!(st, fctx, m2, ssb, t2 + Hour(1), 1.0, 600.0) == 0)
-# gusty low-wind case: mean-field near zero, gusts switch production on
-m2["10u"] .= 3.0f0
-ssb2 = build_seaspray(fctx, m2, 3, mkrel(gs=2.0))
-apply_seaspray!(st, fctx, m2, ssb2, t1 + Hour(1), 1.0, 600.0)
-check("low mean wind: gust-integrated ≫ mean-field emission",
-      ssb2.emitted_gusty[] > 5 * max(ssb2.emitted_mean[], 1e-12),
-      info=@sprintf("gusty %.3g vs mean %.3g kg", ssb2.emitted_gusty[], ssb2.emitted_mean[]))
 check("no land-sea mask → source disabled (warns, nothing)",
       build_seaspray(fctx, Dict{String,Any}(), 1, mkrel()) === nothing)
 
@@ -193,17 +163,17 @@ d = Dict{String,Any}("name"=>"x", "task"=>"transport",
       "lon"=>[10.0,14.0],"lat"=>[2.0,8.0],"z"=>[0.0,50.0],
       "time"=>["2025-05-01T00:00:00","2025-05-02T00:00:00"],
       "mass_per_parcel"=>"100kg",
-      "seaspray"=>Dict{String,Any}("gust_sigma"=>1.5,"salinity"=>34.0,"sst"=>288.0))])
+      "seaspray"=>Dict{String,Any}("salinity"=>34.0,"sst"=>288.0))])
 spc = EasleeConfig.ConfigTOML.dict_to_runspec(d)
 EasleeConfig.validate_runspec(spc)
 r1 = spc.release[1]
 check("[release.seaspray] parses + validates",
-      r1.kind == "seaspray" && r1.spray_gust_sigma == 1.5 &&
+      r1.kind == "seaspray" &&
       r1.spray_salinity == 34.0 && r1.spray_sst == 288.0 &&
       r1.mass_per_parcel_kg == 100.0)
 rt = EasleeConfig.ConfigTOML.runspec_to_dict(spc)
 r2 = EasleeConfig.ConfigTOML.dict_to_runspec(rt).release[1]
-check("round-trips", r2.kind == "seaspray" && r2.spray_gust_sigma == 1.5 &&
+check("round-trips", r2.kind == "seaspray" &&
       r2.spray_sst == 288.0)
 d2 = deepcopy(d); delete!(d2["release"][1], "mass_per_parcel")
 bad = try EasleeConfig.validate_runspec(EasleeConfig.ConfigTOML.dict_to_runspec(d2)); false

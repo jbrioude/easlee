@@ -45,7 +45,7 @@ bins = EASLEE.AerosolBins(edges; mass_frac=mf, rho_p=2650.0, species=:dust)
 check("[5] AerosolBins accepts the Kok fractions (8 bins)", length(bins.d) == 8 && abs(sum(bins.mass_frac) - 1) < 1e-6)
 s = read_runspec(joinpath(REPO, "configs", "example_dust_kok.toml"))
 r = s.release[1]; sp = s.species[1]
-check("[5] example config: kind dust, keys at RunSpec level", r.kind == "dust" && r.dust_clay == 0.15 && r.dust_w_pct == 0.5 && r.mass_per_parcel_kg == 2000.0 && r.particles == 400000, "clay=$(r.dust_clay) w=$(r.dust_w_pct) q=$(r.mass_per_parcel_kg) cap=$(r.particles)")
+check("[5] example config: kind dust, keys at RunSpec level", r.kind == "dust" && r.dust_clay == 0.15 && r.dust_w_pct == 0.5 && r.mass_per_parcel_kg == 20000.0 && r.particles == 400000, "clay=$(r.dust_clay) w=$(r.dust_w_pct) q=$(r.mass_per_parcel_kg) cap=$(r.particles)")
 check("[5] example config: species size.distribution = kok", sp.size_distribution == "kok" && sp.nbins == 8)
 errs = try; validate_runspec(s; check_paths=false); String[]; catch e; [sprint(showerror, e)]; end
 check("[5] example config validates", isempty(errs), isempty(errs) ? "" : errs[1][1:min(120, end)])
