@@ -96,7 +96,7 @@ The bottom line is simple. If you care about this model, write an email.
 
 ## Contact
 
-EASLEE is developed at the Laboratoire de l'Atmosphère et des Cyclones (LACy, UMR 8105 CNRS, Université de La Réunion, Météo-France), Saint-Denis, La Réunion, France. Questions about using the model, bug reports, and requests for the chemistry module are all welcome:
+Questions about using the model, bug reports, and requests for the chemistry module are all welcome:
 
 **jerome.brioude@univ-reunion.fr**
 
