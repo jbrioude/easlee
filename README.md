@@ -84,15 +84,13 @@ The reader is referred to Stohl et al. (2005) for the physics and numerics inher
 
 ## Contributing
 
-EASLEE was written without funding and without institutional support. It exists because the work was worth doing. Anyone who wants to help is welcome, and there is more than enough to do.
+EASLEE was written without funding. It exists because the work was worth doing. Anyone who wants to help is welcome, and there is more than enough to do.
 
 **Adding a meteorological model is the easiest place to start.** EASLEE reads a Eulerian model through a variables namelist rather than through new transport code, so a new dataset usually means describing its fields in `listvariables/<NAME>.vars` and nothing more. If the model you work with is not in the list, it can almost certainly be added.
 
 **Developers are welcome.** The computational layer is written once against abstract grid and level types, so a new projection or a new vertical coordinate means adding methods, not editing the transport code. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how the pieces fit together.
 
-**Co-authorship and proposals.** If EASLEE is useful to your work, co-authorship is open to discussion, and so is including the model in a funding proposal.
-
-The bottom line is simple. If you care about this model, write an email.
+**Citation and collaboration.** If you use EASLEE in published work, please cite Brioude et al. (202X. to be submitted). We are also open to collaborations and joint projects
 
 ## Contact
 
