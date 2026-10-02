@@ -376,3 +376,41 @@ in the developer tree.
   removed. Spawned parcels now sit in the surface layer (fix of 2026-09-25); the test checks it.
 - `test/test_source_mass_quantum.jl`: the spawned parcel mass plus the unspawned remainder
   equals the flux integrated independently over the cells and steps, for both sources.
+
+## 2026-10-02 — vertical velocity to level rate was four times too small (WRF, AROME)
+
+Reported by **Yue Huang**, who spotted it in the WRF reader.  It was in the
+AROME reader as well.
+
+A vertical velocity in m/s becomes a level-index rate by dividing by the LOCAL
+level spacing, which for an interior level is the centred half span,
+`(z[k+1] - z[k-1]) / 2`.  Both readers divided by the full two-level span and
+then by two:
+
+```julia
+W ./ (zlev[:,:,3:Nk] - zlev[:,:,1:Nk-2]) / 2.f0     # = W / (2·span)
+lev[:,:,k+1] / dz2 / 2.0f0                          # = w / (2·dz2)
+```
+
+`/` is left-associative in Julia, so the 2 divided the result rather than the
+spacing, and the rate came out **four times too small** at every interior level.
+The one-sided formulas these same readers use at k = 1 and k = Nk were correct,
+so the interior disagreed with its own boundaries by a factor of four.  The
+third path that does this conversion (`metcalc_models.jl`, the `WT` reader) had
+it right all along, which is what made the other two diagnosable.
+
+Affected: `WRFv2.vars` (maps `W`) and `AROME.vars` (maps `NH_dW`).  ERA5, GFS,
+MERRA-2 and the WRF archived-etadot branch never took these paths.  WRF and
+AROME runs through them were under-ventilated vertically in the interior.
+
+The conversion now lives in one place, `levrate_from_w` in `initialize.jl`, and
+both readers call it.  The duplication is what let the two copies drift from the
+correct one.  Note that a centred DERIVATIVE on the same stencil (drho/dz,
+dsigw/dz) divides by the FULL span and must not carry the factor; those sit on
+the adjacent lines and are unchanged.
+
+New test `test/test_levdot_spacing.jl` (11 checks): uniform and stretched
+columns, agreement between an interior level and the one-sided boundaries, a
+regression guard asserting the old form was wrong by exactly four, and a check
+that the centred derivative still divides by the full span.  Against the old
+code 10 of its 11 checks fail.

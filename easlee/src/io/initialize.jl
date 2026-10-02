@@ -1399,6 +1399,25 @@ function _read_netcdf_file!(filename, indt, filedate::DateTime, metconfig, metfi
       size(dst, 1) == Ni0 + 1 && (dst[Ni0+1,:,indt] = dst[1,:,indt])
    end
 end
+"""
+    levrate_from_w(w, z_below, z_above)
+
+Vertical velocity [m/s] to level-index rate [level/s] for an interior level.
+
+The local spacing of level k is the CENTRED half span, (z[k+1] - z[k-1]) / 2, so
+the conversion divides by that, not by the full two-level span.  Writing it as
+`w / (z[k+1] - z[k-1]) / 2` gives a rate four times too small, because `/` is
+left-associative in Julia and the 2 then divides the result instead of the
+spacing.  That is the shape of the bug Yue Huang reported in the WRF reader on
+2026-10-02, present in the AROME reader too.
+
+A centred DERIVATIVE on the same stencil (drho/dz, dsigw/dz) divides by the full
+span and must not carry this factor.  The two live on adjacent lines, which is
+what made the mistake easy, so the conversion is written once here and called
+from every reader.
+"""
+@inline levrate_from_w(w, z_below, z_above) = w / ((z_above - z_below) / 2)
+
 function checkmetfields!(metconfig,metfields3D,metfields2D,indt)
 # Check that the derived 3D fields (zlev, Ux, Vy, levdot, rho) are defined;
 # if not, try to calculate them from the fields that have been loaded
@@ -1530,7 +1549,8 @@ function checkmetfields!(metconfig,metfields3D,metfields2D,indt)
         elseif "W" in metconfig["easlee_vars_3D"] 
             zlev = metfields3D["zlev"][:,:,:,indt]
             Nk = metconfig["Nk"]
-            metfields3D["levdot"][:,:,2:Nk-1,indt] = metfields3D["W"][:,:,2:Nk-1,indt] ./ (zlev[:,:,3:Nk]-zlev[:,:,1:Nk-2])/2.f0
+            metfields3D["levdot"][:,:,2:Nk-1,indt] = levrate_from_w.(metfields3D["W"][:,:,2:Nk-1,indt],
+                                                                      zlev[:,:,1:Nk-2], zlev[:,:,3:Nk])
             metfields3D["levdot"][:,:,1,indt] = metfields3D["W"][:,:,1,indt] ./ (zlev[:,:,2]-zlev[:,:,1])
             metfields3D["levdot"][:,:,Nk,indt] = metfields3D["W"][:,:,Nk,indt] ./ (zlev[:,:,Nk]-zlev[:,:,Nk-1])
         end
@@ -2196,7 +2216,7 @@ function metaromefieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields
    dsig = @view (metfields3D["dsigwdz"]::Array{Float32,4})[:,:,:,indt]
    for k in 2:Nk-1
       @views @. dz2 = zlev[:,:,k+1] - zlev[:,:,k-1]
-      @views @. lev[:,:,k]  = lev[:,:,k+1]/dz2/2.0f0
+      @views @. lev[:,:,k]  = levrate_from_w(lev[:,:,k+1], zlev[:,:,k-1], zlev[:,:,k+1])
       @views @. drho[:,:,k] = (rho[:,:,k+1] - rho[:,:,k-1])/dz2
       @views @. dsig[:,:,k] = (max(sqrt(2.0f0*tke[:,:,k+1]), 0.2f0) -
                                max(sqrt(2.0f0*tke[:,:,k-1]), 0.2f0))/dz2

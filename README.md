@@ -73,7 +73,7 @@ tools/           plotting and profiling utilities
 
 ```bash
 julia --project=easlee -e 'import Pkg; Pkg.instantiate()'   # once
-julia --project=easlee test/runtests.jl                     # 42 tests, no data needed
+julia --project=easlee test/runtests.jl                     # 45 tests, no data needed
 ```
 
 ## Authors and acknowledgements
