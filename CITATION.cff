@@ -11,7 +11,9 @@ authors:
     given-names: Rémi
     affiliation: "LACy, Laboratoire de l'Atmosphère et des Cyclones, UMR 8105 CNRS, Université de La Réunion, Météo-France, Saint-Denis, La Réunion, France"
 version: 1.1.0
-date-released: 2026-09-13
+date-released: 2026-10-08
+repository-code: "https://github.com/jbrioude/easlee"
+url: "https://gitlab.osureunion.fr/brioude/easlee"
 license: GPL-3.0-or-later
 abstract: >-
   EASLEE is an atmospheric Lagrangian particle dispersion model (LPDM) written

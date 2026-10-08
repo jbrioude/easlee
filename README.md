@@ -98,7 +98,7 @@ Questions about using the model, bug reports, and requests for the chemistry mod
 
 **jerome.brioude@univ-reunion.fr**
 
-If you hit a problem that others might hit too, opening an issue on this GitLab project is more useful than an email, since the answer stays visible.
+The development version lives at <https://gitlab.osureunion.fr/brioude/easlee>. If you hit a problem that others might hit too, opening an issue there is more useful than an email, since the answer stays visible.
 
 ## Licence and citation
 

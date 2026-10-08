@@ -3,5 +3,5 @@
 # works for anyone who hosts that archive themselves, but we do not provide the files:
 # retrieve them with flex_extract (https://www.flexpart.eu/flex_extract) and either fill
 # the link in below or pass --url.
-etex_era5   = "https://gitlab.osureunion.fr/api/v4/projects/631/packages/generic/era5/1.0/ERA5_ETEX.tar"    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
+etex_era5   = "https://doi.org/10.5281/zenodo.22951136"    # hourly ERA5, 23-26 Oct 1994, Europe — configs/output_etex.toml, validation/check_etex.jl
 captex_era5 = ""    # NOT provided — hourly ERA5, Sept-Oct 1983, eastern North America (validation/validate_captex.jl)
