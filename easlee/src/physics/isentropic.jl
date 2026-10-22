@@ -217,14 +217,31 @@ end
     return 0.5f0 * (1.0f0 - cos(Float32(π) * x))
 end
 
+# θ is a full-level (class F) field: under the stacked layout contract slot 1
+# (surface θ) sits at indl = 1 and slot k ≥ 2 at indl = k − ½.  Every θ read
+# that is compared with, or inverted to, a level index goes through this pair
+# (`_theta_at_indl` mirrors interp.jl `_split_z_stagger`, including the
+# top-level clamp; `_theta_to_indl` is its inverse), so settling's θ_p rebase
+# (species_physics.jl) and the hybrid ladder cannot drift apart again.
+@inline _theta_slot_indl(k::Int) = k == 1 ? 1.0f0 : Float32(k) - 0.5f0
+
+@inline function _theta_at_indl(th::AbstractVector{Float32}, indl::Float32, nz::Int)
+    s = indl >= 1.5f0 ? indl + 0.5f0 : max(1.0f0, 2.0f0 * indl - 1.0f0)
+    s >= Float32(nz) && return @inbounds th[nz]
+    k = Base.unsafe_trunc(Int, s)
+    return @inbounds th[k] + (s - Float32(k)) * (th[k+1] - th[k])
+end
+
 # Invert the local θ ladder: θ → continuous level index.  Restricted to the
-# index range above kmin (θ monotonic in the upper troposphere/stratosphere).
+# slots from kmin up (θ monotonic in the upper troposphere/stratosphere).
 @inline function _theta_to_indl(th::AbstractVector{Float32}, tq::Float32,
                                 kmin::Int, nz::Int)
-    tq <= th[kmin] && return Float32(kmin)
+    tq <= th[kmin] && return _theta_slot_indl(kmin)
     @inbounds for k in (kmin+1):nz
         if tq <= th[k]
-            return Float32(k - 1) + (tq - th[k-1]) / max(th[k] - th[k-1], 1.0f-3)
+            lo = _theta_slot_indl(k - 1)
+            return lo + (_theta_slot_indl(k) - lo) *
+                        (tq - th[k-1]) / max(th[k] - th[k-1], 1.0f-3)
         end
     end
     return Float32(nz - 1)
@@ -279,14 +296,12 @@ function hybrid_vertical!(hyb::HybridVert, state, ctx, dt_s::Real, t_array)
             if w <= 0.0f0
                 # Pure kinematic region: keep θ_p synchronised with the grid
                 # so the parcel enters the blend zone with the right value.
-                k0 = clamp(Base.unsafe_trunc(Int, indl), 1, nz - 1)
-                hyb.theta_p[i] = th[k0] + (indl - k0) * (th[k0+1] - th[k0])
+                hyb.theta_p[i] = _theta_at_indl(th, indl, nz)
                 continue
             end
 
             # Initialise θ_p on first contact with the blend zone.
-            k0 = clamp(Base.unsafe_trunc(Int, indl), 1, nz - 1)
-            th_grid = th[k0] + (indl - k0) * (th[k0+1] - th[k0])
+            th_grid = _theta_at_indl(th, indl, nz)
             hyb.theta_p[i] <= 0.0f0 && (hyb.theta_p[i] = th_grid)
 
             # Diabatic drift θ̇ = (θ/T)·(dT/dt)_diab
@@ -336,8 +351,7 @@ function hybrid_vertical!(hyb::HybridVert, state, ctx, dt_s::Real, t_array)
 
             # Prognostic θ update: exact in the isentropic limit (no grid
             # re-interpolation when w = 1), grid-relaxed inside the blend.
-            k1 = clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, nz - 1)
-            th_new = th[k1] + (state.indl[i] - k1) * (th[k1+1] - th[k1])
+            th_new = _theta_at_indl(th, state.indl[i], nz)
             hyb.theta_p[i] = w * th_tgt + (1.0f0 - w) * th_new
         end
     end

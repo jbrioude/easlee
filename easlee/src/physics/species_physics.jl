@@ -130,8 +130,9 @@ function dry_deposition_gas!(state::State.ParcelState, ctx, sp::SpeciesPhysics,
             b = Int(state.relbox[i])
             vd = sp.vd[b]
             if vd < 0f0                              # resistance model
-                T  = interpolation4Dsingle(m3.T,   indx, indy, 2.0f0, indt)
-                p  = interpolation4Dsingle(m3.puv, indx, indy, 2.0f0, indt)
+                # lowest full level = slot 2, read at indl 1.5 (layout contract)
+                T  = interpolation4Dsingle(m3.T,   indx, indy, 1.5f0, indt)
+                p  = interpolation4Dsingle(m3.puv, indx, indy, 1.5f0, indt)
                 us = interpolate2Dsingle(m2.ustar, indx, indy, indt)
                 ol = interpolate2Dsingle(m2.ol,    indx, indy, indt)
                 (isfinite(T) && isfinite(p) && T > 150.0f0) || continue
@@ -256,8 +257,10 @@ struct SpeciesConvert
     # Freeze-event moments, per SOURCE (vapour) box: Σ over mode-1 conversions
     # of m·X.  X = ambient T (no T′), the T′ actually applied, ln q, ln q_si
     # (at the gate's T), ln p, and the STAGGERED−PLAIN θ/ρ-read temperature
-    # offset at the gate — the §0c.2-item-7 vertical-convention split,
-    # measured where it bites, not fixed.
+    # offset at the gate — the §0c.2-item-7 vertical-convention split.  Since
+    # the 2026-10-22 layout contract settling and the hybrid ladder read θ
+    # stacked like the gate, so fz_mdT no longer measures a live split: it is
+    # the error the pre-contract plain read made, kept for comparability.
     fz_mT::Vector{Float64}
     fz_mTp::Vector{Float64}
     fz_mlq::Vector{Float64}
@@ -518,7 +521,8 @@ function apply_convert_thermo!(state::State.ParcelState, ctx, cv::SpeciesConvert
         # environment of every vapour→ice conversion, mass-weighted.  fz_mdT
         # measures the staggered−plain read offset at the gate: the gate's
         # `interpolation4Dsingle` samples θ/ρ half a level ABOVE the plain
-        # convention that settling and the hybrid ladder use (§0c.2 item 7).
+        # read that settling and the hybrid ladder made before the 2026-10-22
+        # layout contract (§0c.2 item 7); both now read stacked like the gate.
         if md == Int8(1) && qsi_save > 0.0
             cv.fz_mT[b]    += m0 * Ta_save
             cv.fz_mTp[b]   += m0 * (T_save - Ta_save)
@@ -610,20 +614,18 @@ function apply_species_settling!(state::State.ParcelState, ctx, sp::SpeciesPhysi
         # cross-isentropic: rebase the prognostic θ on the level just reached,
         # else the hybrid step undoes this fall (see docstring).
         #
-        # CONVENTION (bug fixed 2026-08-05 — this was the ASCENT PUMP): read θ
-        # with the SAME plain level-index convention as the `_z_at`/`_z_to_indl`
-        # arithmetic above, and as the hybrid's own `th_grid`
-        # (isentropic.jl).  `interpolation4Dsingle` applies the STAGGER map
-        # (indl → mass level indl + 0.5, interp.jl `_split_z_stagger`), so
-        # using it here read θ HALF A LEVEL TOO HIGH — several hundred metres,
-        # 13–17 K on a stratospheric ladder.  The hybrid step then relocated
-        # the parcel to match that too-warm θ, lifting it ~0.4 km per settling
-        # step: a net UPWARD pump on exactly the freeze→settle→sublimate
-        # population (diagnosed at run scale in ht_asc4/ht_asc5).
+        # CONVENTION: θ_p must be read with the SAME map the hybrid ladder
+        # inverts (isentropic.jl `_theta_at_indl`/`_theta_to_indl`).  A
+        # half-level mismatch between the two (2026-08-05, the ASCENT PUMP:
+        # 13–17 K on a stratospheric ladder) makes the hybrid relocate the
+        # parcel after every settling step, ~0.4 km upward per step on the
+        # freeze→settle→sublimate population (ht_asc4/ht_asc5).  θ is a
+        # full-level field, so since the 2026-10-22 layout contract both sides
+        # use the stacked read (slot k at indl k − ½); zlev above stays plain.
         if thetap !== nothing
             th = thbufs[Threads.threadid()]
             get_vertical_profile!(th, m3.theta, state.indx[i], state.indy[i], indt, nz)
-            θn = _z_at(th, clamp(state.indl[i], 1.0f0, Float32(nz - 1)), nz)
+            θn = _theta_at_indl(th, clamp(state.indl[i], 1.0f0, Float32(nz - 1)), nz)
             isfinite(θn) && θn > 0f0 && (thetap[i] = θn)
         end
         Threads.atomic_add!(nmov, 1)

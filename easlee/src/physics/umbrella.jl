@@ -204,8 +204,9 @@ function apply_umbrella_spread!(state::State.ParcelState, gridconfig, globalx::B
         zp = NaN
         if met !== nothing &&
            (umb.zgain > 0.0 || (azg > 0.0 && umb.az_z1 > umb.az_z0))
-            zp = Float64(interpolation4Dsingle(met.zlev, state.indx[i], state.indy[i],
-                                               state.indl[i], Float32(indt)))
+            # zlev is a half-level (class H) field: plain read at indl
+            zp = Float64(interpolation4Dlevsingle(met.zlev, state.indx[i], state.indy[i],
+                                                  state.indl[i], Float32(indt)))
         end
         if umb.zgain > 0.0 && isfinite(zp) && zp > umb.zg_z0
             ur *= 1.0 + umb.zgain *

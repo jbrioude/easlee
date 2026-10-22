@@ -140,14 +140,25 @@ const PLUME_ENS_CACHE = Dict{Tuple{Int,Int,Int},NamedTuple}()   # (specidx, phas
 # step by apply_umbrella_spread! in the engine loop.
 const UMBRELLA_REG = Dict{Tuple{Int,Int},Tuple{UmbrellaIntrusion,Set{Int}}}()  # (specidx, phase)
 
-# Ambient column (z ASL, T, p, q) at a release cell, for the volcanic schemes.
+# Heights of the full levels at a grid column: T, p, θ, ρ (class F) slot k sits
+# between half levels k-1 and k at zf(k) = ½(zlev[k-1] + zlev[k]); slot 1 holds
+# the surface values, at the ground zlev[1] (layout contract 2026-10-22).  Every
+# profile that pairs a height with a class-F slot must use these, not zlev[k].
+function _full_level_heights(z3, ix::Int, iy::Int, it::Int)
+    nz = size(z3, 3)
+    return Float64[k == 1 ? z3[ix, iy, 1, it] :
+                   0.5 * (z3[ix, iy, k - 1, it] + z3[ix, iy, k, it]) for k in 1:nz]
+end
+
+# Ambient column (z above ground, T, p, q) at a release cell, for the volcanic schemes.
+# Nearest grid column and met time slot; z on the full levels (class F pairing).
 function _volcanic_column_arrays(nestctx, indx, indy, indt)
     g  = nestctx.gridconfig
     ix = clamp(round(Int, indx), 1, Int(g.Ni)); iy = clamp(round(Int, indy), 1, Int(g.Nj))
     m3 = nestctx.metfields3D
     z3 = m3.zlev; th = m3.theta
     nz = size(z3, 3); it = clamp(round(Int, indt), 1, size(z3, 4))
-    zcol = Float64[z3[ix, iy, k, it] for k in 1:nz]
+    zcol = _full_level_heights(z3, ix, iy, it)
     θcol = Float64[th[ix, iy, k, it] for k in 1:nz]
     p0 = 100000.0; κ = 287.05 / 1005.0
     pcol = Float64[m3.puv[ix, iy, k, it] for k in 1:nz]
@@ -168,7 +179,7 @@ function _compute_plume_layer(cfg, nestctx, indx, indy, indt)
     ix = clamp(round(Int, indx), 1, Int(g.Ni)); iy = clamp(round(Int, indy), 1, Int(g.Nj))
     z3 = nestctx.metfields3D.zlev; th = nestctx.metfields3D.theta
     nz = size(z3, 3); it = clamp(round(Int, indt), 1, size(z3, 4))
-    zcol = Float64[z3[ix, iy, k, it] for k in 1:nz]
+    zcol = _full_level_heights(z3, ix, iy, it)       # θ is class F: full-level heights
     zagl = zcol .- zcol[1]
     θcol = Float64[th[ix, iy, k, it] for k in 1:nz]
     if cfg.scheme == "volcanic"
@@ -522,9 +533,12 @@ function initialize_new_parcels!(state::State.ParcelState, ctx::Config.ModelCont
             indl1 = clamp(floor(Int, state.indl[i]), 1, Int(nz - 1))
             indl2 = indl1 + 1
 
+            # rho is class F (stacked read at indl); zlev is class H, so the layer
+            # [indl1, indl2] has the plain-read thickness zlev[indl2] − zlev[indl1]
+            # (layout contract 2026-10-22).
             rho = interpolation4Dsingle(rhoarray, safe_indx, safe_indy, state.indl[i], indt)
-            z2m = interpolation4Dsingle(zarray, safe_indx, safe_indy, Float32(indl2), indt)
-            z1m = interpolation4Dsingle(zarray, safe_indx, safe_indy, Float32(indl1), indt)
+            z2m = interpolation4Dlevsingle(zarray, safe_indx, safe_indy, Float32(indl2), indt)
+            z1m = interpolation4Dlevsingle(zarray, safe_indx, safe_indy, Float32(indl1), indt)
 
             if state.mass[i] <= zero(F)
                 state.mass[i] = rho * max(z2m - z1m, F(1e-3))
@@ -532,7 +546,8 @@ function initialize_new_parcels!(state::State.ParcelState, ctx::Config.ModelCont
 
             tkeprof = get_vertical_profile(tkearray, safe_indx, safe_indy, indt, nz)
             zprof = get_vertical_profile(zarray, safe_indx, safe_indy, indt, nz)
-            thetaprof = get_vertical_profile(theta, safe_indx, safe_indy, indt, nz)
+            # theta is class F: at the half levels zprof pairs it with (contract)
+            thetaprof = full_to_half_levels!(get_vertical_profile(theta, safe_indx, safe_indy, indt, nz), Int(nz))
             tke_z = interpolation1Dsingle(tkeprof, state.indl[i])
             z = interpolation1Dsingle(zprof, state.indl[i])
             indz = clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, length(zprof) - 1)
@@ -712,6 +727,31 @@ function advance_dispatch!(state, ctx, currentdate, indt_array)
     end
     return nothing
 end
+
+# Level index, in nest `tgt` at (new_indx, new_indy), of a parcel leaving nest
+# `src` from (indx, indy, indl).  A level index belongs to its nest's zlev
+# (class H, layout contract 2026-10-22): the same indl is another height in a
+# nest with other levels, so the parcel keeps its height above ground instead.
+# The old position is clamped to src's grid (the parcel has just left it); a
+# non-finite height keeps indl; the result is clamped to tgt's level range.
+function _indl_across_nests(src, tgt, indx::F, indy::F, indl::F,
+                            new_indx::F, new_indy::F, t_src, t_tgt) where {F<:AbstractFloat}
+    zl_src = src.metfields3D.zlev
+    ix_s  = clamp(indx, F(1), F(size(zl_src, 1) - 1))
+    iy_s  = clamp(indy, F(1), F(size(zl_src, 2) - 1))
+    il_s  = clamp(indl, F(1), F(size(zl_src, 3)))
+    z_agl = indltozlev(src.levelconfig, zl_src, ix_s, iy_s, il_s, t_src)
+    zl_tgt = tgt.metfields3D.zlev
+    out = indl
+    if isfinite(z_agl)
+        ix_t = clamp(new_indx, F(1), F(size(zl_tgt, 1) - 1))
+        iy_t = clamp(new_indy, F(1), F(size(zl_tgt, 2) - 1))
+        v = F(ztoindl(tgt.levelconfig, ix_t, iy_t, z_agl, t_tgt, zl_tgt))
+        isfinite(v) && (out = v)
+    end
+    return clamp(out, F(1), F(size(zl_tgt, 3) - 1))
+end
+
 """
     reassign_escaped_parcels!(state, ctx, currentdate)
 
@@ -733,6 +773,7 @@ function reassign_escaped_parcels!(state::State.ParcelState, ctx::Config.ModelCo
     # survivor (Dtime = currentdate − |ts|) look escaped and freed it every
     # step — backward transport never advanced past the release step.
     next_date   = currentdate + timestep
+    t_esc       = nothing        # met time index per nest, built on the first reassignment
 
     for i in eachindex(state.status)
         state.status[i] == 0x01 || continue      # only active parcels
@@ -779,9 +820,12 @@ function reassign_escaped_parcels!(state::State.ParcelState, ctx::Config.ModelCo
             continue
         end
 
-        # ── Clamp vertical level to the new nest's range ─────────────────────
-        Nk_new  = Int32(size(ctx.nests[new_nest].metfields3D.zlev, 3))
-        new_indl = clamp(state.indl[i], F(1), F(Nk_new - 1))
+        # ── Vertical position through height (see _indl_across_nests) ───────
+        t_esc === nothing && (t_esc = MetAdapter.met_time_index_array(currentdate, ctx.nests))
+        new_indl = _indl_across_nests(ctx.nests[current_nest], ctx.nests[new_nest],
+                                      state.indx[i], state.indy[i], state.indl[i],
+                                      new_indx, new_indy,
+                                      t_esc[current_nest], t_esc[new_nest])
 
         state.nest[i]  = I(new_nest)
         state.indx[i]  = new_indx

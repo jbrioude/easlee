@@ -250,7 +250,9 @@ function apply_dust!(state::State.ParcelState, ctx, m2::AbstractDict, db::DustBo
             jla = la + (rand(rng) - 0.5) * dlat
             indy, indx = latlontoindyindx(gc, jla, jlo)
             # keep the jittered point inside the (cropped) met grid; level 1 is the
-            # surface after the reader's level shift, so the lowest layer is indl ≈ 1.2
+            # surface after the reader's level shift.  indl 1.2 is inside the lowest
+            # model layer, at 0.2·zlev[2] above the ground (layout contract) — about
+            # 4 m on ERA5 L137, whose lowest full level (~10 m) sits at indl 1.5
             indx = clamp(Float64(indx), 1.0, Float64(gc.Ni) - 1.0e-3)
             indy = clamp(Float64(indy), 1.0, Float64(gc.Nj) - 1.0e-3)
             _write_boundary_parcel!(state, slot, nest, Float32(indx), Float32(indy),

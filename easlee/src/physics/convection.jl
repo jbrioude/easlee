@@ -61,9 +61,18 @@
 # scheme (diagnostic_convection!) mixes a column toward uniform: its kernel is
 # symmetric in air mass and needs no transpose.
 #
-# Vertical indexing: profiles are collocated with zlev (k = 1 surface … Nk top)
-# exactly like every other 3-D met field after the GRIB reader's surface-layer
-# shift.  The parcel's continuous level index indl lives in the same space.
+# Vertical indexing (stacked layout of the readers, 2026-10-22): zlev[k] are the
+# HALF levels (zlev[1] = 0 ground, zlev[nz] model top) and indl is linear in
+# height between them; umf, dmf, rho, T, puv, qv are FULL-level fields whose
+# slot k ≥ 2 is the layer between zlev[k−1] and zlev[k] (slot 1 holds surface
+# values, 0 for the fluxes).  LAYER k of this scheme is that full level:
+# k = 2 … nz, air mass dm[k] = ρ[k]·(zlev[k] − zlev[k−1]), holding the parcels
+# with indl ∈ [k−1, k).  Interface k (= "k+1/2" above) sits at zlev[k], between
+# layers k and k+1, and carries M^if[k] = ½(M[k] + M[k+1]); 0 at the ground
+# (k = 1) and at the model top (k = nz).  Until 2026-10-22 the profiles were
+# taken as collocated with zlev: layer k was [zlev[k], zlev[k+1]] with
+# ½(ρ[k]+ρ[k+1]) and the flux through zlev[k+1] was ½(M[k]+M[k+1]) — the
+# value at zlev[k], i.e. the archived flux profile applied one layer too high.
 
 const _CONV_MF_EPS = 1.0f-5   # [kg m⁻² s⁻¹] below this the draught has died out
 
@@ -147,11 +156,12 @@ function _convect_nest!(state, nestctx, cf, dt::Float32, indt, idx;
         dm = dmbufs[tid]; m1 = m1bufs[tid]; S = Sbufs[tid]
         _build_conv_column!(dm, m1, S, z, rho, mu, md, dt, nz)
 
+        # Layer k = the full level between zlev[k-1] and zlev[k]: indl ∈ [k-1, k).
         indl = state.indl[i]
-        k0   = clamp(Base.unsafe_trunc(Int, indl), 1, nz - 1)
+        k0   = clamp(Base.unsafe_trunc(Int, indl) + 1, 2, nz)
         kc   = _convect_column(_ParcelRNG(state, i), k0, dm, m1, S, mu, md, dt, nz, backward)
         # 3) Land at a uniformly random height inside the destination layer.
-        @inbounds z_new = z[kc] + _conv_rand(state, i) * (z[min(kc + 1, nz)] - z[kc])
+        @inbounds z_new = z[kc - 1] + _conv_rand(state, i) * (z[kc] - z[kc - 1])
         # Met fields can carry NaN at masked cells; never write a non-finite
         # level index (same policy as the advection kernel).
         isfinite(z_new) || continue
@@ -177,9 +187,10 @@ end
 """
     _convect_column(rng, k0, dm, m1, S, mu, md, dt, nz, backward) → destination layer
 
-One convective redistribution of a parcel in layer `k0` on a column described by
-the layer air masses `dm`, the post-conveyor image `m1`, the cumulative deficit `S`
-and the interface up/down mass fluxes (`mu`, `md`, level-collocated, magnitudes).
+One convective redistribution of a parcel in layer `k0` (2 … nz, the full level
+between zlev[k0-1] and zlev[k0]) on a column described by the layer air masses
+`dm`, the post-conveyor image `m1`, the cumulative deficit `S` and the up/down
+mass fluxes (`mu`, `md`, full-level profiles, magnitudes).
 `backward=false`: conveyor then compensating subsidence (the forward kernel);
 `backward=true`: the mass-weighted transpose — reversed subsidence then reversed
 conveyor.  `rng()` returns a uniform number in [0,1).
@@ -206,7 +217,8 @@ conveyor.  `rng()` returns a uniform number in [0,1).
         #    descent probability at interface c−1/2 is S[c-1]/(dm[c]+S[c-1]),
         #    which maps the post-conveyor image m1 back onto dm in expectation,
         #    so an initially uniform (in air mass) ensemble stays uniform.
-        @inbounds while kc > 1
+        #    Layer 2 (on the ground) is the lowest.
+        @inbounds while kc > 2
             denom = dm[kc] + S[kc - 1]
             (denom > 0f0 && rng() < S[kc - 1] / denom) || break
             kc -= 1
@@ -217,8 +229,8 @@ conveyor.  `rng()` returns a uniform number in [0,1).
         #     holds dm[c] + S[c-1] of which S[c] arrived from above — ascend with
         #     that share, and repeat at the level above.
         kc = k0
-        @inbounds while kc < nz - 1
-            denom = dm[kc] + (kc > 1 ? S[kc - 1] : 0f0)      # the pool at kc after the forward descent
+        @inbounds while kc < nz
+            denom = dm[kc] + S[kc - 1]                       # the pool at kc after the forward descent
             (denom > 0f0 && rng() < S[kc] / denom) || break
             kc += 1
         end
@@ -248,7 +260,7 @@ end
 # the draught flux vanishes.  Mirror for the downdraught (dir=−1, walking up).
 @inline function _flux_walk_adjoint(rng, m::AbstractVector{Float32}, l::Int, nz::Int, dir::Int)
     j = l - dir
-    @inbounds while 1 <= j <= nz - 1
+    @inbounds while 2 <= j <= nz
         f_here  = dir > 0 ? _uflux(m, j)     : _dflux(m, j - 1)   # flux leaving j toward l
         f_below = dir > 0 ? _uflux(m, j - 1) : _dflux(m, j)       # flux entering j from further away
         if f_here < _CONV_MF_EPS                                  # no draught leaves j: it started at j+dir
@@ -258,27 +270,28 @@ end
         rng() < pent && break
         j -= dir
     end
-    return clamp(j, 1, nz - 1)
+    return clamp(j, 2, nz)
 end
 
-# Interface mass fluxes (collocated halfway between levels k and k+1); 0 at the
-# surface (k=0) and model top (k=nz).  Magnitudes ≥ 0.
+# Interface mass flux at zlev[k], between full levels k and k+1; 0 at the
+# ground (k = 1: slot 1 is the surface, not a layer below it) and at the model
+# top (k = nz).  Magnitudes ≥ 0.
 @inline _uflux(mu::AbstractVector{Float32}, k::Int) =
-    (k < 1 || k >= length(mu)) ? 0.0f0 : 0.5f0 * (mu[k] + mu[k + 1])
+    (k < 2 || k >= length(mu)) ? 0.0f0 : 0.5f0 * (mu[k] + mu[k + 1])
 @inline _dflux(md::AbstractVector{Float32}, k::Int) =
-    (k < 1 || k >= length(md)) ? 0.0f0 : 0.5f0 * (md[k] + md[k + 1])
+    (k < 2 || k >= length(md)) ? 0.0f0 : 0.5f0 * (md[k] + md[k + 1])
 
 # Build the per-column air-mass redistribution bookkeeping.
-#   dm[k] = ρ̄·Δz   layer air mass (k = 1 … nz−1; dm[nz] = 0)
+#   dm[k] = ρ[k]·(zlev[k] − zlev[k−1])   air mass of layer k (k = 2 … nz; dm[1] = 0)
 #   m1[k]          air-mass image after the up/downdraught conveyor
-#   S[k]  = Σ_{l≤k}(dm[l] − m1[l])   cumulative deficit below interface k
-# By flux telescoping ∑(dm−m1)=0, so S[nz-1]≈0; and since the conveyor moves
-# air upward, lower layers are in deficit ⇒ S[k] ≥ 0 (a valid downward current).
+#   S[k]  = Σ_{l≤k}(dm[l] − m1[l])   cumulative deficit below interface k (zlev[k])
+# By flux telescoping ∑(dm−m1)=0, so S[nz]≈0 (set to 0); and since the conveyor
+# moves air upward, lower layers are in deficit ⇒ S[k] ≥ 0 (a valid downward current).
 @inline function _build_conv_column!(dm, m1, S, z, rho, mu, md, dt::Float32, nz::Int)
-    @inbounds for k in 1:nz-1
-        dz   = max(z[k + 1] - z[k], 1.0f0)
-        rmid = 0.5f0 * (max(rho[k], 1.0f-4) + max(rho[k + 1], 1.0f-4))
-        dm[k] = rmid * dz
+    dm[1] = 0.0f0; m1[1] = 0.0f0                 # slot 1 is the ground, not a layer
+    @inbounds for k in 2:nz
+        dz   = max(z[k] - z[k - 1], 1.0f0)
+        dm[k] = max(rho[k], 1.0f-4) * dz
         # net flux convergence → detrainment into k; divergence → entrainment out
         up_in  = max(_uflux(mu, k - 1) - _uflux(mu, k), 0.0f0) * dt   # updraught detrains here
         up_out = max(_uflux(mu, k) - _uflux(mu, k - 1), 0.0f0) * dt   # entrained up
@@ -288,7 +301,6 @@ end
         mo > dm[k] && (mo *= dm[k] / mo)                 # cannot remove more than the layer holds
         m1[k] = dm[k] - mo + up_in + dn_in
     end
-    dm[nz] = 0.0f0; m1[nz] = 0.0f0
     acc = 0.0f0
     @inbounds for k in 1:nz-1
         acc += dm[k] - m1[k]
@@ -310,7 +322,7 @@ end
     l = k0
     @inbounds while true
         l += dir
-        if l < 1 || l > nz - 1
+        if l < 2 || l > nz
             l -= dir                      # rode off the end → detrain at last valid layer
             break
         end
@@ -321,7 +333,7 @@ end
         pdet = 1.0f0 - clamp(f_out / f_in, 0.0f0, 1.0f0)
         rng() < pdet && break
     end
-    return clamp(l, 1, nz - 1)
+    return clamp(l, 2, nz)
 end
 
 # Height of a parcel at continuous level index indl on profile z.
@@ -456,9 +468,10 @@ function _diag_convect_nest!(state, nestctx, df, dt::Float32, indt, idx,
         T = tbufs[tid];  get_vertical_profile!(T,  m3.T,    indx, indy, indt, nz)
         pp = pbufs[tid]; get_vertical_profile!(pp, m3.puv,  indx, indy, indt, nz)
 
-        # Source parcel: lowest model level.  q from the ARCHIVED humidity when the
-        # reader provides it; the Tv = p/(R_d·ρ) reconstruction is only a fallback —
-        # it yields q ≡ 0 on readers that store dry density (ERA5), killing the EL.
+        # Source parcel: lowest model level = full level 2 (slot 1 holds the surface
+        # values).  q from the ARCHIVED humidity when the reader provides it; the
+        # Tv = p/(R_d·ρ) reconstruction is only a fallback — it yields q ≡ 0 on
+        # readers that store dry density (ERA5), killing the EL.
         q2 = if df.qv !== nothing
             qb = qbufs[tid]
             get_vertical_profile!(qb, df.qv, indx, indy, indt, nz)
@@ -469,41 +482,48 @@ function _diag_convect_nest!(state, nestctx, df, dt::Float32, indt, idx,
         the_p = _theta_e_bolton(T[2], pp[2], max(q2, 0.0f0))
 
         # Equilibrium level: topmost level (below 17 km) where the lifted
-        # parcel is still buoyant w.r.t. the saturated environment.
+        # parcel is still buoyant w.r.t. the saturated environment.  T and puv
+        # are full-level fields: level k sits at zf = ½(zlev[k-1] + zlev[k]).
         kel = 0
+        zel = 0.0f0
         @inbounds for k in nz:-1:3
-            (isfinite(z[k]) && z[k] <= 17000.0f0) || continue
+            zf = 0.5f0 * (z[k-1] + z[k])
+            (isfinite(zf) && zf <= 17000.0f0) || continue
             thes = _theta_e_bolton(T[k], max(pp[k], 100.0f0), _qsat_bolton(T[k], max(pp[k], 100.0f0)))
             if the_p > thes
                 kel = k
+                zel = zf
                 break
             end
         end
         kel == 0 && continue
-        z[kel] < p.zel_min && continue
+        zel < p.zel_min && continue
 
         # Only parcels below the EL take part in the convective mixing.
         zp = _z_at(z, state.indl[i], nz)
-        zp > z[kel] && continue
+        zp > zel && continue
 
-        # Redistribute uniformly in air mass over [0, z_EL].
+        # Redistribute uniformly in air mass over [0, z_EL].  The layer between
+        # zlev[k-1] and zlev[k] holds full level k: air mass ρ[k]·Δz; cm[k] is the
+        # air mass below zlev[k], and z_EL is the middle of layer kel.
         cm = cbufs[tid]
         cm[1] = 0.0f0
         @inbounds for k in 2:kel
-            dm = 0.5f0 * (r[k-1] + r[k]) * (z[k] - z[k-1])
+            dm = r[k] * (z[k] - z[k-1])
             cm[k] = cm[k-1] + (isfinite(dm) ? max(dm, 0.0f0) : 0.0f0)
         end
-        cm[kel] <= 0.0f0 && continue
-        u = _conv_rand(state, i) * cm[kel]
-        kdst = kel - 1
+        mel = 0.5f0 * (cm[kel-1] + cm[kel])
+        mel <= 0.0f0 && continue
+        u = _conv_rand(state, i) * mel
+        kdst = kel
         @inbounds for k in 2:kel
             if cm[k] >= u
-                kdst = k - 1
+                kdst = k
                 break
             end
         end
-        f = (u - cm[kdst]) / max(cm[kdst+1] - cm[kdst], 1.0f-6)
-        z_new = z[kdst] + f * (z[kdst+1] - z[kdst])
+        f = (u - cm[kdst-1]) / max(cm[kdst] - cm[kdst-1], 1.0f-6)
+        z_new = z[kdst-1] + f * (z[kdst] - z[kdst-1])
         isfinite(z_new) || continue
         state.indl[i] = _z_to_indl(z, clamp(z_new, 0.0f0, z[nz-1]), nz)
     end

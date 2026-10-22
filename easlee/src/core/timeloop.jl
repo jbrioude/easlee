@@ -44,6 +44,7 @@ function step_model!(state::State.ParcelState, ctx::Config.ModelContext, current
                      do_output::Bool = true,
                      rng = Random.default_rng(),
                      convfields = nothing,
+                     wetfields = nothing,
                      diagconv = nothing,
                      diagconvparams = nothing,
                      wetdepparams = nothing,
@@ -95,16 +96,21 @@ function step_model!(state::State.ParcelState, ctx::Config.ModelContext, current
         Bench.timeit!(() -> Operators.convective_redistribution!(state, ctx, convfields, dt_s, t_array;
                       conv_count = transport_tags === nothing ? nothing : transport_tags.conv_count),
                       bench, :convection)
-        if wetdepparams !== nothing
-            Bench.timeit!(() -> Operators.wet_deposition!(state, ctx, convfields, dt_s, t_array;
-                          params=wetdepparams, wdstate=wetdepstate, sphys=species_physics),
-                          bench, :wetdep)
-        end
     elseif diagconv !== nothing
         dt_s = Float64(abs(ctx.runconfig.timestep.value) / 1000.0)
         Bench.timeit!(() -> Operators.diagnostic_convection!(state, ctx, diagconv, dt_s, t_array;
             params = diagconvparams === nothing ? Operators.DiagConvParams() : diagconvparams),
             bench, :convection)
+    end
+    # Wet deposition needs tpf/cc only, never umf (2026-10-13: it ran inside the
+    # convection branch and so vanished on datasets without a mass flux).
+    # Callers that pass only convfields keep the old behaviour.
+    wf = wetfields === nothing ? convfields : wetfields
+    if wf !== nothing && wetdepparams !== nothing
+        dt_s = Float64(abs(ctx.runconfig.timestep.value) / 1000.0)
+        Bench.timeit!(() -> Operators.wet_deposition!(state, ctx, wf, dt_s, t_array;
+                      params=wetdepparams, wdstate=wetdepstate, sphys=species_physics),
+                      bench, :wetdep)
     end
 
     # ── Optional aerosol processes (settling → dry dep → size-dependent wet dep)
@@ -114,8 +120,8 @@ function step_model!(state::State.ParcelState, ctx::Config.ModelContext, current
         # review 2026-09-04 A6: deposition ran regardless of the config switches; now gated.
         aerosol_drydep &&
             Bench.timeit!(() -> Operators.dry_deposition_aerosol!(aerosol, state, ctx, dt_s, t_array), bench, :drydep)
-        if convfields !== nothing && aerosol_wetdep
-            Bench.timeit!(() -> Operators.wet_deposition_aerosol!(aerosol, state, ctx, convfields, dt_s, t_array),
+        if wf !== nothing && aerosol_wetdep
+            Bench.timeit!(() -> Operators.wet_deposition_aerosol!(aerosol, state, ctx, wf, dt_s, t_array),
                           bench, :wetdep)
         end
     end

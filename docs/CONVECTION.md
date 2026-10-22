@@ -32,7 +32,8 @@ diagnostics, per parcel and per time step (operator-split after advection):
 tracer is an exact fixed point):
 
 1. *Entrainment / detrainment* come straight from the **flux divergence** of the
-   interface mass fluxes `M_u^if[k] = ½(M_u[k]+M_u[k+1])`:
+   interface mass fluxes `M_u^if[k] = ½(M_u[k]+M_u[k+1])` (at `zlev[k]`, between
+   full levels k and k+1 — see *Vertical layout* below):
    `entrain_up[k] = max(M_u^if[k]−M_u^if[k−1],0)·Δt` (air drawn out of layer k),
    `detrain_up[k] = max(M_u^if[k−1]−M_u^if[k],0)·Δt` (air deposited into layer k);
    mirror for the downdraught.  The capture probability is `entrain/dm`.  Because
@@ -55,6 +56,26 @@ tracer is an exact fixed point):
 
 MERRA2 runs with `umf` only (no downdraught) — a usable degradation, not a
 failure mode.
+
+**Vertical layout** (the readers' stacked layout, 2026-10-22): `zlev[k]` are the
+half levels (`zlev[1] = 0`, the ground); `umf`, `dmf`, `udr`, `ddr`, `rho` are
+full-level fields, slot k ≥ 2 holding the layer between `zlev[k−1]` and
+`zlev[k]`, slot 1 the surface (fluxes 0).  The scheme's layer k is that full
+level: k = 2 … Nk, air mass `ρ[k]·(zlev[k] − zlev[k−1])`, holding the parcels with
+`indl ∈ [k−1, k)`; the interface between layers k and k+1 is `zlev[k]`, with
+`M^if[k]` above, and 0 at the ground and at the model top.  Before 2026-10-22 the
+profiles were read as collocated with `zlev`: layer k was `[zlev[k], zlev[k+1]]`
+with `½(ρ[k]+ρ[k+1])`, and its top flux `½(M[k]+M[k+1])` — the archived flux at
+`zlev[k]` — was applied at `zlev[k+1]`, one layer too high.  (MERRA-2's `CMFMC`
+is archived on the edges; the reader averages it to the full levels and the
+scheme interpolates back to the edges, a 1-2-1 smoothing of the edge profile.)
+Measured on the same stacked input, old vs corrected kernel, 2 M parcels: on the
+strongest-`umf` ERA5 column of 2025-05-31 (shallow, `umf` ≤ 0.75 kg m⁻² s⁻¹,
+top ≈ 3.3 km) the parcel up-flux through `zlev[k]` matches `M^if[k]` to
+L1 = 0.028 (0.120 before) in a 60 s step, and risers detrain one layer
+(≈ 220 m) lower; after 4 h at Δt = 15 min, 29 % less of the air from below 1 km
+is above 3 km.  On a synthetic deep column (top 12 km) risers detrain ≈ 550 m
+lower and 14 % more sub-cloud air is lofted above 2 km.
 
 **Validation** (well-mixed convection test, ERA5 2025-05-31,
 strongest-`umf` column, 200 k parcels initialised uniform in air mass, Δt = 15
@@ -108,9 +129,14 @@ from T/q profiles:
 
 1. **Event gate**: archived `CAPE ≥ cape_min` (default 100 J/kg) and, when
    archived, `CIN ≤ cin_max` (default 50 J/kg).
-2. **Equilibrium level**: θe of a lowest-model-level parcel (Bolton 1980) vs
-   the environment's *saturated* θe profile; EL = topmost level (≤ 17 km)
-   where the lifted parcel is still buoyant.  Specific humidity is
+2. **Equilibrium level**: θe of a lowest-model-level parcel (Bolton 1980; full
+   level 2, slot 1 holding the surface values) vs the environment's *saturated*
+   θe profile; EL = topmost full level (≤ 17 km) where the lifted parcel is still
+   buoyant, at its full-level height `½(zlev[k−1] + zlev[k])` (until 2026-10-22
+   `zlev[k]`, half a layer higher: on GFS 2026-06-03 at the max-CAPE column the
+   EL went from 15466 to 14426 m; on ERA5 2025-05-31 from 16830 to 16978 m, the
+   17 km cap now admitting one more level).  The air mass below the EL is that
+   of the layers `ρ[k]·(zlev[k] − zlev[k−1])`.  Specific humidity is
    reconstructed from the typed fields via `Tv = p/(R_d·ρ)` — no additional
    3-D inputs needed.  Events shallower than `zel_min` (2 km) are ignored.
 3. **Redistribution**: parcels below the EL are re-placed **uniformly in air
@@ -202,8 +228,6 @@ backward mode.
   built.  NB the full `Mu(z)` profile is still fully used: its *rising* part
   sets entrainment (how many parcels enter per level), its *falling* part sets
   detrainment (where they land).
-- Mass-flux/detrainment levels are treated as collocated with the other 3-D
-  fields (half/full-level distinction neglected — second-order at 137 levels).
 - The compensating-subsidence descent is downward-only (`S` clamped ≥ 0): it is
   *exact* for the usual updraught-dominated column, and simply applies no
   compensation (no error) in the rare net-downdraught column — adding an upward

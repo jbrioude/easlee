@@ -13,7 +13,10 @@
 # wash or small win at typical nz=60.
 
 # ── Turbulence length scale (4D version) ─────────────────────────────────────
-# Accesses the theta/z profiles at exactly two integer level indices.
+# Accesses the theta/z profiles at exactly two integer level indices.  theta is
+# class F: its value at the half levels indz/indzp (heights zlev[indz]/zlev[indzp])
+# comes from half_level_value_4d, the same stencil as the CPU profile
+# (get_vertical_profile_half!, layout contract 2026-10-22).
 @inline function turbulent_length_scale_v2_4d(
     indz::Int, indzp::Int,
     tke_here::Float32, z_here::Float32,
@@ -27,8 +30,8 @@
     dist_top = max(z_top  - z_here, 1.0f-3)
     ℓ_geom   = 0.25f0 * min(dist_bot, dist_top)
 
-    θ0 = interpolation4Dlevsingle(theta_arr, indx, indy, Float32(indz),  indt)
-    θ1 = interpolation4Dlevsingle(theta_arr, indx, indy, Float32(indzp), indt)
+    θ0 = half_level_value_4d(theta_arr, indx, indy, indz,  indt)
+    θ1 = half_level_value_4d(theta_arr, indx, indy, indzp, indt)
     z0 = interpolation4Dlevsingle(zlev_arr,  indx, indy, Float32(indz),  indt)
     z1 = interpolation4Dlevsingle(zlev_arr,  indx, indy, Float32(indzp), indt)
 
@@ -54,7 +57,6 @@ end
     theta_arr  ::AbstractArray{Float32,4},
     tke_arr    ::AbstractArray{Float32,4},
     rho_arr    ::AbstractArray{Float32,4},
-    drhodz_arr ::AbstractArray{Float32,4},
     vmix       ::VMixClosure,          # unused; keeps the call sites uniform
 )
     z = interpolation4Dlevsingle(zlev_arr, indx, indy, indl, indt)
@@ -69,7 +71,8 @@ end
 #   dt, ldt, ifine, wp — same as turbulence_v3
 #   indt               — met time index
 #   nk                 — number of vertical levels
-#   zlev, theta, tke, rho, drhodz — full 4D met arrays (dsigwdz computed online)
+#   zlev, theta, tke, rho — full 4D met arrays (dsigwdz computed online; ρ, θ
+#                        and ∂ρ/∂z taken at the half levels, see met/interp.jl)
 #   rng_state          — UInt64 xorshift state (updated on return)
 #
 # Returns: (z_new, delz, wp_new, ldt_new, tke_z, yl, rng_state_new)
@@ -89,7 +92,6 @@ end
     theta_arr  ::AbstractArray{Float32,4},
     tke_arr    ::AbstractArray{Float32,4},
     rho_arr    ::AbstractArray{Float32,4},
-    drhodz_arr ::AbstractArray{Float32,4},
     vmix       ::VMixClosure,   # per-driver σ_w²/K_z closure (Fix C) — passed as a
                                 # kernel argument: GPU code cannot read the VMIX Ref
 )
@@ -106,8 +108,8 @@ end
     while dt_left > eps(Float32)
         z       = interpolation4Dlevsingle(zlev_arr,   indx, indy, indl, indt)
         tke_z   = interpolation4Dlevsingle(tke_arr,    indx, indy, indl, indt)
-        rhoa    = interpolation4Dlevsingle(rho_arr,    indx, indy, indl, indt)
-        rhograd = interpolation4Dlevsingle(drhodz_arr, indx, indy, indl, indt)
+        # ρ is class F: half-level ρ and ∂ρ/∂z, as the CPU profiles (contract)
+        rhoa, rhograd = half_level_density_4d(rho_arr, zlev_arr, indx, indy, indl, indt)
         rhoaux  = rhograd / max(rhoa, 1.0f-12)
 
         indz  = clamp(Base.unsafe_trunc(Int, indl), 1, Int(nk) - 1)
@@ -149,6 +151,10 @@ end
         term3  ::Float32 = tlw * (1.0f0 - rw) * (dsigwdz + rhoaux * sigw)
 
         wp_try ::Float32 = term1 + term2 + term3
+        if !isfinite(wp_try)            # NaN met value in the column: as turbulence_v3
+            rng_state, zr2 = xorshift_randn_clamped(rng_state)
+            wp_try = zr2
+        end
         delz            = wp_try * sigw * dt_sub
         z_try  ::Float32 = z + delz
 
@@ -178,7 +184,8 @@ end
 #
 #   • the column is sampled from the 4-D met arrays at (indx, indy, indl, indt)
 #     instead of the hoisted 1-D profiles the CPU path builds once per sync step
-#     (`height`, `rhoprof`, `rhogradprof`), which a kernel cannot carry;
+#     (`height`, `rhoprof`, `rhogradprof`), which a kernel cannot carry; ρ and
+#     ∂ρ/∂z at the half levels from half_level_density_4d (the CPU stencil);
 #   • σ_w, dσ_w/dz and T_L come from the Hanna (1982) analytic profile
 #     `hanna_sigw_tlw(z, pblh, ustar, wstar, ol, sigw_ft)` instead of the TKE
 #     field, so the surface parameters are needed per parcel: they arrive as
@@ -203,7 +210,6 @@ end
     rng_state::UInt64,
     zlev_arr   ::AbstractArray{Float32,4},
     rho_arr    ::AbstractArray{Float32,4},
-    drhodz_arr ::AbstractArray{Float32,4},
     ustar  ::Float32,
     pblh   ::Float32,
     wstar  ::Float32,
@@ -221,8 +227,7 @@ end
 
     while dt_left > eps(Float32)
         z       = interpolation4Dlevsingle(zlev_arr,   indx, indy, indl, indt)
-        rhoa    = interpolation4Dlevsingle(rho_arr,    indx, indy, indl, indt)
-        rhograd = interpolation4Dlevsingle(drhodz_arr, indx, indy, indl, indt)
+        rhoa, rhograd = half_level_density_4d(rho_arr, zlev_arr, indx, indy, indl, indt)
         rhoaux  = rhograd / max(rhoa, 1.0f-12)
 
         sigw, dsigwdz, tlw = hanna_sigw_tlw(z, pblh, ustar, wstar, ol, sigw_ft)

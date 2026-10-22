@@ -5,7 +5,7 @@
 # [[release]] box), generalised from the chem_cams_pacific.jl harness:
 #
 #   1. domainfill_init!   — place nparts parcels at t=0: uniform in lon/lat over
-#      the box, model levels drawn ∝ air mass (ρ·Δz), each parcel carrying
+#      the box, model layers drawn ∝ air mass (ρ·Δz), each parcel carrying
 #      mass_per_parcel = box air mass / nparts.
 #   2. domainfill_inject! — each step, inject parcels along the 4 box edges
 #      proportional to the incoming mass flux ρ·v_in·width·Δz·Δt.  The library
@@ -23,14 +23,22 @@
 # The optional `seeded` BitVector (chemistry bookkeeping in run_spec!) has the
 # bit cleared for every slot this code writes or frees, so init="cams" re-seeds
 # inflow parcels with the boundary composition.
+#
+# Vertical layout (contract 2026-10-22): layer k is [zlev[k], zlev[k+1]) — level
+# indices [k, k+1), where its parcels are placed — and holds full level k+1.
+# Its air mass is ρ[k+1]·(zlev[k+1] − zlev[k]) and its inflow uses the wind of
+# full level k+1, both read with the stacked interpolation at index k + 1/2.
+# Until 2026-10-22 the weight was ρ[k]·Δz centred on half level k (ρ and Δz
+# half a level below the layer the parcels went into) and the face reads were
+# the plain interpolation at k + 1/2 (the mean of slots k and k+1).
 
 struct DomainFillBox
     lon0::Float64; lon1::Float64        # continuous frame, lon1 > lon0 (dateline-crossing OK)
     lat0::Float64; lat1::Float64
     ztop::Float64                       # fill-layer top [m]
-    keep_lev::Vector{Int}               # model levels with mean height ≤ ztop
+    keep_lev::Vector{Int}               # layers [k, k+1) whose full level (mid height) is ≤ ztop
     lev_w::Vector{Float64}              # air-mass weight (ρ·Δz) per keep_lev entry
-    lev_h::Vector{Float64}              # mean height of EVERY model level (box-centre column)
+    lev_h::Vector{Float64}              # height of EVERY half level k = zlev[k] (box-centre column)
     mass_per_parcel::Float32
     nparts::Int
 end
@@ -44,13 +52,9 @@ end
 
 const _DF_MDEG = 111_320.0              # metres per degree (meridional)
 
-# Layer thickness Δz [m] centred on level k (harness convention: (z[k+1]-z[k-1])/2).
-@inline function _df_dz(zarr, fx::Float32, fy::Float32, k::Int, Nk::Int, indt::Float32)
-    khi = min(k + 1, Nk); klo = max(k - 1, 1)
-    zhi = interpolation4Dlevsingle(zarr, fx, fy, Float32(khi), indt)
-    zlo = interpolation4Dlevsingle(zarr, fx, fy, Float32(klo), indt)
-    return max((zhi - zlo) / (khi - klo), 1.0f0)
-end
+# Air density of layer k = full level k+1: the stacked read at index k + 1/2.
+@inline _df_rho(rhoarr, fx::Float32, fy::Float32, k::Int, indt::Float32) =
+    interpolation4Dsingle(rhoarr, fx, fy, Float32(k) + 0.5f0, indt)
 
 # First free slot after `after` (monotone scan — callers thread the cursor).
 @inline function _df_next_free(state, after::Int)
@@ -65,7 +69,7 @@ end
 """
     build_domainfill(nestctx, indt, lon, lat, ztop, nparts) → DomainFillBox
 
-Level weights (box-centre column) + box air mass → mass_per_parcel.  Call after
+Layer weights (box-centre column) + box air mass → mass_per_parcel.  Call after
 the first `read_met_step!` so ρ/zlev are loaded.
 """
 function build_domainfill(nestctx, indt::Float32, lon::AbstractVector, lat::AbstractVector,
@@ -77,21 +81,24 @@ function build_domainfill(nestctx, indt::Float32, lon::AbstractVector, lat::Abst
     lon1 <= lon0 && (lon1 += 360.0)               # dateline-crossing box
     lat0, lat1 = min(lat[1], lat[2]), max(lat[1], lat[2])
 
-    # per-level ρ·Δz weight + mean height at the box-centre column
+    # per-layer ρ·Δz weight + half-level heights at the box-centre column
     indy, indx = latlontoindyindx(gc, 0.5 * (lat0 + lat1), 0.5 * (lon0 + lon1))
     fx, fy = Float32(indx), Float32(indy)
-    w = zeros(Float64, Nk); h = zeros(Float64, Nk)
+    w = zeros(Float64, Nk - 1); h = zeros(Float64, Nk)
     for k in 1:Nk
-        ρ  = interpolation4Dlevsingle(met.rho,  fx, fy, Float32(k), indt)
         zk = interpolation4Dlevsingle(met.zlev, fx, fy, Float32(k), indt)
-        dz = _df_dz(met.zlev, fx, fy, k, Nk, indt)
         h[k] = isfinite(zk) ? zk : 1.0e9
+    end
+    for k in 1:(Nk - 1)
+        ρ  = _df_rho(met.rho, fx, fy, k, indt)
+        dz = _dz_lev(met.zlev, fx, fy, k, indt)
         (isfinite(ρ) && ρ > 0 && isfinite(dz)) && (w[k] = ρ * dz)
     end
-    keep = [k for k in 1:Nk if h[k] <= ztop && w[k] > 0]
-    isempty(keep) && error("domainfill: no model levels below ztop = $ztop m")
+    # a layer belongs to the fill when its full level (mid height) is ≤ ztop
+    keep = [k for k in 1:(Nk - 1) if 0.5 * (h[k] + h[k+1]) <= ztop && w[k] > 0]
+    isempty(keep) && error("domainfill: no model layers below ztop = $ztop m")
 
-    # box air mass: ρ·area·Δz over met-resolution cells × kept levels
+    # box air mass: ρ·area·Δz over met-resolution cells × kept layers
     dlon = _df_dlon(gc); dlat = _df_dlat(gc)
     tot = 0.0
     latq = lat0 + dlat / 2
@@ -102,8 +109,8 @@ function build_domainfill(nestctx, indt::Float32, lon::AbstractVector, lat::Abst
             iy, ix = latlontoindyindx(gc, latq, lonq)
             qx, qy = Float32(ix), Float32(iy)
             for k in keep
-                ρ  = interpolation4Dlevsingle(met.rho, qx, qy, Float32(k), indt)
-                dz = _df_dz(met.zlev, qx, qy, k, Nk, indt)
+                ρ  = _df_rho(met.rho, qx, qy, k, indt)
+                dz = _dz_lev(met.zlev, qx, qy, k, indt)
                 (isfinite(ρ) && ρ > 0 && isfinite(dz)) && (tot += ρ * area * dz)
             end
             lonq += dlon
@@ -118,7 +125,8 @@ end
 """
     domainfill_init!(state, ctx, df, date, indt; nest=1, rng, seeded=nothing) → n placed
 
-Place the initial fill: uniform in lon/lat over the box, levels ∝ air mass.
+Place the initial fill: uniform in lon/lat over the box, layers ∝ air mass
+(a parcel of layer k at level index k + U[0, 1)).
 Parcels have `is_new = false` and `Dtime = date`, so the advance picks them up
 in the step at `date` and `initialize_new_parcels!` leaves them alone.
 """
@@ -126,7 +134,7 @@ function domainfill_init!(state::State.ParcelState, ctx, df::DomainFillBox,
                           date::DateTime, indt::Float32;
                           nest::Int = 1, rng = Random.default_rng(), seeded = nothing)
     gc = ctx.nests[nest].gridconfig
-    # integer parcel count per level ∝ weight; rounding residual → heaviest level
+    # integer parcel count per layer ∝ weight; rounding residual → heaviest layer
     wsum = sum(df.lev_w)
     counts = [round(Int, wk / wsum * df.nparts) for wk in df.lev_w]
     counts[argmax(df.lev_w)] += df.nparts - sum(counts)
@@ -163,7 +171,6 @@ function domainfill_inject!(state::State.ParcelState, ctx, df::DomainFillBox,
     nestctx = ctx.nests[nest]
     gc  = nestctx.gridconfig
     met = nestctx.metfields3D
-    Nk  = Int(nestctx.levelconfig.Nk)
     dlon = _df_dlon(gc); dlat = _df_dlat(gc)
     dtf  = Float32(dt_s)
     ninj = 0; slot = 0
@@ -189,12 +196,12 @@ function domainfill_inject!(state::State.ParcelState, ctx, df::DomainFillBox,
                 indy, indx = latlontoindyindx(gc, latq, lonf)
                 fx, fy = Float32(indx), Float32(indy)
                 for k in df.keep_lev
-                    kf = Float32(k) + 0.5f0
-                    u = interpolation4Dlevsingle(met.Ux, fx, fy, kf, indt) * usign
+                    kf = Float32(k) + 0.5f0          # layer mid index → full level k+1
+                    u = interpolateU(gc.Uedge, met.Ux, fx, fy, kf, indt) * usign
                     (isfinite(u) && u > 0.0f0) || continue
-                    ρ = interpolation4Dlevsingle(met.rho, fx, fy, kf, indt)
+                    ρ = _df_rho(met.rho, fx, fy, k, indt)
                     (isfinite(ρ) && ρ > 0.0f0) || continue
-                    nr = (ρ * u * dy_m * _df_dz(met.zlev, fx, fy, k, Nk, indt) * dtf) /
+                    nr = (ρ * u * dy_m * _dz_lev(met.zlev, fx, fy, k, indt) * dtf) /
                          df.mass_per_parcel
                     isfinite(nr) || continue
                     n = floor(Int, nr)
@@ -218,12 +225,12 @@ function domainfill_inject!(state::State.ParcelState, ctx, df::DomainFillBox,
             indy, indx = latlontoindyindx(gc, latf, lonq)
             fx, fy = Float32(indx), Float32(indy)
             for k in df.keep_lev
-                kf = Float32(k) + 0.5f0
-                v = interpolation4Dlevsingle(met.Vy, fx, fy, kf, indt) * vsign
+                kf = Float32(k) + 0.5f0              # layer mid index → full level k+1
+                v = interpolateV(gc.Vedge, met.Vy, fx, fy, kf, indt) * vsign
                 (isfinite(v) && v > 0.0f0) || continue
-                ρ = interpolation4Dlevsingle(met.rho, fx, fy, kf, indt)
+                ρ = _df_rho(met.rho, fx, fy, k, indt)
                 (isfinite(ρ) && ρ > 0.0f0) || continue
-                nr = (ρ * v * dx_m * _df_dz(met.zlev, fx, fy, k, Nk, indt) * dtf) /
+                nr = (ρ * v * dx_m * _dz_lev(met.zlev, fx, fy, k, indt) * dtf) /
                      df.mass_per_parcel
                 isfinite(nr) || continue
                 n = floor(Int, nr)

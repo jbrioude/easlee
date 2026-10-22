@@ -357,6 +357,9 @@ end
 # approximation used in the pre-compute option, giving exact consistency
 # between the drift term and the σ_w profile.
 #
+# `rhoprof` / `rhogradprof` are ρ and ∂ρ/∂z at the half levels `height`
+# (get_density_profiles_half!, met/interp.jl), not the raw class-F columns.
+#
 # Returns: (z_new, delz, wp_new, tlw, tke_z, yl)
 # v1.1: count of guarded w' resets in turbulence_hanna_v1 (trap-#1 visibility)
 const _HANNA_WP_RESETS = Threads.Atomic{Int}(0)
@@ -427,14 +430,14 @@ const _HANNA_WP_RESETS = Threads.Atomic{Int}(0)
             z    = 2.0f0 * zwall - z_try
             wp   = -wp_try
             z    = max(z, zwall + 1.0f-4)
-            indl = interpolation1Dsingleirreg(height, z)
+            indl = _indl_below_top(height, z)
         else
             z  = z_try
             wp = wp_try
         end
 
         z    = clamp(z, height[1] + 1.0f-4, height[end] - 1.0f-4)
-        indl = interpolation1Dsingleirreg(height, z)
+        indl = _indl_below_top(height, z)
     end
 
     return z, delz, wp, tlw, tke_z, yl

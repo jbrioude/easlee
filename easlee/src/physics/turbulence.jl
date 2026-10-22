@@ -162,6 +162,14 @@ tke_partition(tke_z::Float32, yl::Float32) = tke_partition(VMIX[], tke_z, yl)
     return tlh, sigh
 end
 
+# Level index of height z on the profile, kept below the top level: at a 16 km
+# top, height[end] − 1e-4 rounds to height[end] in Float32 (spacing 0.002 m), the
+# search returned exactly Nk and the next interpolation1Dsingle read element
+# Nk+1 (AROME-HDF with turbulence, BoundsError 43 of 42, 2026-10-22).  The KA
+# bodies are protected by their samplers' top clamp.
+@inline _indl_below_top(height::AbstractVector{Float32}, z::Float32) =
+    min(interpolation1Dsingleirreg(height, z), Float32(length(height)) - 1.0f-3)
+
 # ── NoTurb pass-through ───────────────────────────────────────────────────────
 # Pure advection — no stochastic vertical displacement.
 # Returns the same signature as turbulence_v3 but with zero perturbation.
@@ -185,6 +193,11 @@ end
 # ── Thomson (BL89) full turbulence step ───────────────────────────────────────
 # Advances a single parcel through one model sub-step using the stochastic
 # Langevin equation.  Returns (z_new, delz, wp_new, tlw, tke_z, yl).
+#
+# Every profile is indexed like `height` (the zlev column, half levels): tke is
+# class H as archived; pttprof, rhoprof and rhogradprof must be the class-F
+# θ, ρ and ∂ρ/∂z AT the half levels (get_vertical_profile_half! /
+# get_density_profiles_half!, met/interp.jl — layout contract 2026-10-22).
 #
 # dsigwdz is computed online as a forward difference of clamped sigw over the
 # layer [indz, indz+1] containing the parcel.  This is consistent with
@@ -258,6 +271,14 @@ function turbulence_v3(
         term3::Float32 = tlw * (1.0f0 - rw) * (dsigwdz + rhoaux * sigw)
 
         wp_try::Float32 = term1 + term2 + term3
+        # a NaN met value in the column (masked cell, or the 2026-10-22 GFS
+        # surface slot) made wp, z and then the level index NaN, and the next
+        # profile read went out of bounds: reset to a fresh draw, as the Hanna
+        # bodies do (turbulence_hanna.jl), warned once
+        if !isfinite(wp_try)
+            @warn "thomson: non-finite w' reset (NaN in the turbulence profiles)" maxlog=1 term1 term2 term3 sigw dsigwdz rhoaux tlw z
+            wp_try = clamp(randn(Float32), -3.0f0, 3.0f0)
+        end
         delz = wp_try * sigw * dt_sub
         z_try::Float32  = z + delz
 
@@ -265,17 +286,17 @@ function turbulence_v3(
             z  = 2.0f0 * zwall - z_try
             wp = -wp_try
             z  = max(z, zwall + 1.0f-4)
-            indl = interpolation1Dsingleirreg(height, z)
+            indl = _indl_below_top(height, z)
         else
             z  = z_try
             wp = wp_try
         end
 
         z    = clamp(z, height[1] + 1.0f-4, height[end] - 1.0f-4)
-        indl = interpolation1Dsingleirreg(height, z)
+        indl = _indl_below_top(height, z)
     end
 
-    return z, delz, wp, tlw, tke_z, yl, interpolation1Dsingleirreg(height, z)
+    return z, delz, wp, tlw, tke_z, yl, _indl_below_top(height, z)
 end
 
 # ── Hanna option a (pre-computed TKE) ─────────────────────────────────────────

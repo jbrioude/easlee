@@ -83,7 +83,9 @@ function _grid_spacing_m(g::Types.Rectilinear, ::State.ParcelState)
     dx_eq   = 1.0 / Float64(g.dxconst)
     dy_m    = 1.0 / Float64(g.dyconst)
     mid_j   = 0.5 * Float64(g.Nj)
-    lat_mid = Float64(g.offsety) + Float64(g.coeffy) * mid_j
+    # latitude of the middle met row (was offsety + coeffy·mid_j — an OUTPUT
+    # index, not a latitude; fixed 2026-10-13)
+    lat_mid = Float64(g.latmin) + Float64(g.dlat) * (mid_j - 1.0)
     return dx_eq * cosd(lat_mid), dy_m
 end
 

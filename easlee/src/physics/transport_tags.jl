@@ -122,8 +122,9 @@ function apply_transport_tags!(state::State.ParcelState, ctx, tags::TransportTag
             hpbl = Float32(pblh[clamp(round(Int, indx), 1, Ni),
                                 clamp(round(Int, indy), 1, Nj), it])
             if hpbl >= _TAG_PBLH_FLOOR
-                z_amsl = interpolation4Dsingle(zlev, indx, indy, indl, indt)
-                z_sfc  = interpolation4Dsingle(zlev, indx, indy, 1.0f0, indt)
+                # zlev is a half-level (class H) field: plain read at indl
+                z_amsl = interpolation4Dlevsingle(zlev, indx, indy, indl, indt)
+                z_sfc  = interpolation4Dlevsingle(zlev, indx, indy, 1.0f0, indt)
                 z_agl  = z_amsl - z_sfc
                 if z_agl <= hpbl
                     tags.pbl_steps[i] += Int32(1)

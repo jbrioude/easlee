@@ -282,9 +282,11 @@ function apply_seaspray!(state::State.ParcelState, ctx, m2::AbstractDict,
             # atmosphere); the jittered point is kept inside the (cropped) met grid.
             indx = clamp(Float64(indx), 1.0, Float64(gc.Ni) - 1.0e-3)
             indy = clamp(Float64(indy), 1.0, Float64(gc.Nj) - 1.0e-3)
+            # indl 1.2 is inside the lowest model layer, at 0.2·zlev[2] above the
+            # ground (layout contract: zlev[1] = 0, height linear in indl) — about
+            # 4 m on ERA5 L137, whose lowest full level (~10 m) sits at indl 1.5
             _write_boundary_parcel!(state, slot, nest, Float32(indx), Float32(indy),
-                                    1.2f0,                 # lowest model layer (~10 m)
-                                    Float32(ssb.quantum), d)
+                                    1.2f0, Float32(ssb.quantum), d)
             state.relbox[slot] = eltype(state.relbox)(ssb.relbox)
             ssb.acc[c] -= ssb.quantum
             ssb.emitted[] += ssb.quantum

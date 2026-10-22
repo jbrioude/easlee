@@ -445,14 +445,15 @@ function dry_deposition_aerosol!(aero::AerosolModel, state, ctx, dt_s::Real, t_a
             get_vertical_profile!(z, m3.zlev, indx, indy, indt, nz)
             zp = _z_at(z, clamp(state.indl[i], 1.0f0, Float32(nz - 1)), nz)
             zp > aero.href && continue
-            T  = interpolation4Dsingle(m3.T,   indx, indy, 2.0f0, indt)
-            p  = interpolation4Dsingle(m3.puv, indx, indy, 2.0f0, indt)
+            # lowest full level = slot 2, read at indl 1.5 (layout contract)
+            T  = interpolation4Dsingle(m3.T,   indx, indy, 1.5f0, indt)
+            p  = interpolation4Dsingle(m3.puv, indx, indy, 1.5f0, indt)
             us = interpolate2Dsingle(m2.ustar, indx, indy, indt)
             ol = interpolate2Dsingle(m2.ol,    indx, indy, indt)
             (isfinite(T) && isfinite(p) && T > 150.0f0) || continue
             isfinite(us) || (us = 0.2f0)
             isfinite(ol) || (ol = 1.0f6)
-            gf = growth_factor(aero.bins.kappa, _parcel_rh(m3, indx, indy, 2.0f0, indt))
+            gf = growth_factor(aero.bins.kappa, _parcel_rh(m3, indx, indy, 1.5f0, indt))
             vd = deposition_velocity(aero.bins.d[b] * gf, _wet_density(aero.bins.rho_p, gf),
                                      T, p, us, ol, aero.href)
             frem = -expm1(-vd * dt / aero.href)
@@ -532,7 +533,9 @@ function wet_deposition_aerosol!(aero::AerosolModel, state, ctx, convfields,
             I_mmh = tpf * 3600.0f0
             ccp = ccbufs[tid]
             get_vertical_profile!(ccp, cf.cc, indx, indy, indt, nz)
-            k0 = clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, nz - 1)
+            # cloud fraction of the layer containing the parcel: full level k
+            # spans zlev[k-1]..zlev[k] (layout contract) → slot floor(indl) + 1
+            k0 = clamp(Base.unsafe_trunc(Int, state.indl[i]) + 1, 2, nz)
             cc_here = ccp[k0]
             cc_max  = 0.0f0
             @inbounds for k in 1:nz

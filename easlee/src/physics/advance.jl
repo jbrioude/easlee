@@ -72,13 +72,18 @@ end
     return var > 0.0f0 ? sqrt(var) : 0.0f0
 end
 
+# The vertical pair is the two levels that bracket the parcel in each field's own
+# layout: u, v are class F (full levels, the stacked base _split_z_stagger gives:
+# levels k, k+1 for indl in [k-½, k+½)), levdot is class H (half levels trunc(indl),
+# trunc(indl)+1).  Layout contract 2026-10-22; the class-H base was used for all three.
 @inline function _mesoscale_sigmas(uarr, varr, warr,
                                    xi::Float32, yi::Float32, zi::Float32, nz_int::Int)
     i0 = clamp(Base.unsafe_trunc(Int, xi), 1, size(uarr, 1) - 1)
     j0 = clamp(Base.unsafe_trunc(Int, yi), 1, size(uarr, 2) - 1)
     k0 = clamp(Base.unsafe_trunc(Int, zi), 1, nz_int - 1)
-    return (_std16(uarr, i0, j0, k0),
-            _std16(varr, i0, j0, k0),
+    kF = clamp(_split_z_stagger(zi)[2], 1, nz_int - 1)
+    return (_std16(uarr, i0, j0, kF),
+            _std16(varr, i0, j0, kF),
             _std16(warr, i0, j0, k0))
 end
 
@@ -140,7 +145,6 @@ function updatepos!(
     theta_arr   = metfields3Din.theta
     tke_arr     = metfields3Din.tke
     rho_arr     = metfields3Din.rho
-    drhodz_arr  = metfields3Din.drhodz
     # One set of 8 scratch profile buffers per thread slot.  These are pure
     # per-parcel scratch, so they persist across model steps — cached by
     # (nz, nthr) instead of re-allocated at every updatepos! call (the
@@ -230,14 +234,18 @@ function updatepos!(
         # This removes the per-sub-step 4D→column re-extraction that dominated the
         # turbulence cost.  Full column (not the windowed path) → no window drift
         # as the parcel moves vertically over the step.
+        # Every profile is paired with height_buf = zlev (half levels).  tke is
+        # class H and is read as is; theta and rho are class F (full levels, slot 1
+        # = surface), so they enter at the half levels, and ∂ρ/∂z is formed across
+        # each half level from ρ itself (layout contract 2026-10-22, met/interp.jl).
         if !(_turb isa NoTurb)
             indx_safe0 = clamp(ix0, 1.0f0, Float32(size(zlev_arr, 1) - 1))
             indy_safe0 = clamp(iy0, 1.0f0, Float32(size(zlev_arr, 2) - 1))
-            get_vertical_profile!(height_buf,              zlev_arr,   indx_safe0, indy_safe0, indt_n, nz_int)
-            get_vertical_profile_nearest!(pttprof_buf,     theta_arr,  indx_safe0, indy_safe0, indt_n, nz_int)
-            get_vertical_profile_nearest!(tkeprof_buf,     tke_arr,    indx_safe0, indy_safe0, indt_n, nz_int)
-            get_vertical_profile_nearest!(rhoprof_buf,     rho_arr,    indx_safe0, indy_safe0, indt_n, nz_int)
-            get_vertical_profile_nearest!(rhogradprof_buf, drhodz_arr, indx_safe0, indy_safe0, indt_n, nz_int)
+            get_vertical_profile!(height_buf,          zlev_arr,  indx_safe0, indy_safe0, indt_n, nz_int)
+            get_vertical_profile_half!(pttprof_buf,    theta_arr, indx_safe0, indy_safe0, indt_n, nz_int)
+            get_vertical_profile_nearest!(tkeprof_buf, tke_arr,   indx_safe0, indy_safe0, indt_n, nz_int)
+            get_density_profiles_half!(rhoprof_buf, rhogradprof_buf, rho_arr, height_buf,
+                                       indx_safe0, indy_safe0, indt_n, nz_int)
             fill!(sigwcol_buf, NaN32)      # invalide le mémo colonne σw/τ_Lw/ℓ
 
         end
@@ -253,16 +261,19 @@ function updatepos!(
             levdot::Float32 = interpolateW(gridconfig.Wedge, levdotarray, trajsin.indx[i], trajsin.indy[i], trajsin.indl[i], indt_n)
 
             # Monin-Obukhov surface layer (surface_layer.jl): below the lowest
-            # model level the archived wind is a slab — put the parcel back on
-            # the similarity profile anchored at that level.
-            # review 2026-09-04 A3: z_sl < z1_sl ⇔ indl < 2 (z1_sl is zlev at
-            # indl = 2 and zlev is monotone in k) — skip the two 16-point
-            # interpolations for every parcel above the lowest model level.
-            if rc_n.mo_surface && trajsin.indl[i] < 2.0f0
+            # full level the archived wind is a slab — put the parcel back on
+            # the similarity profile anchored at that level.  The lowest full
+            # level sits at indl = MO_ANCHOR_INDL = 1.5, height ½(zlev[1]+zlev[2]);
+            # below it ux/vy blend slot 1 and slot 2, equal by the layout
+            # contract, so |(ux, vy)| IS the anchor wind.  Above it (indl in
+            # [1.5, 2) and up) the wind blends real full levels: no rescaling.
+            # review 2026-09-04 A3: z_sl < z1_sl ⇔ indl < 1.5 (zlev is monotone
+            # in k) — skip the two 16-point interpolations above the anchor.
+            if rc_n.mo_surface && trajsin.indl[i] < MO_ANCHOR_INDL
                 z_sl  = interpolation4Dlevsingle(zlev_arr, trajsin.indx[i],
                                                  trajsin.indy[i], trajsin.indl[i], indt_n)
                 z1_sl = interpolation4Dlevsingle(zlev_arr, trajsin.indx[i],
-                                                 trajsin.indy[i], 2.0f0, indt_n)
+                                                 trajsin.indy[i], MO_ANCHOR_INDL, indt_n)
                 if isfinite(z_sl) && z_sl < z1_sl
                     ust_sl = interpolate2Dsingle(metfields2Din.ustar, trajsin.indx[i],
                                                  trajsin.indy[i], indt_n)
@@ -314,6 +325,14 @@ function updatepos!(
                 # Option b: real Hanna on-the-fly — surface params interpolated at
                 # the provisional parcel position; Thomson path otherwise.
                 local z_new::Float32, delz::Float32, indl_turb::Float32
+                # The mean-wind step can put indl_prov below the ground or above
+                # the top; the turbulence step reads its profiles at that index
+                # with @inbounds (index 0 or Nk+1: garbage values, or a segfault).
+                # Clamp as the KA kernel does (advance_ka.jl).  Missing here until
+                # 2026-10-22: GFS 0.25° with turbulence segfaulted, AROME-HDF read
+                # a tke of −6e-37 (BoundsError under --check-bounds=yes at
+                # indl −16 and 43 of 42).
+                indl_prov = clamp(indl_prov, 1.0f0, indl_top)
                 if _turb isa Hanna && _turb.turbswitch
                     # review 2026-09-04 A4: provisional horizontal position
                     # (mean wind) is consumed only here — computed only here.

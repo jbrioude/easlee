@@ -108,7 +108,8 @@ function traj_write!(tw, state, ctx, currentdate, indt, istep::Int)
         if tw.demovor
             # height_m is AGL, so height_m < pblh_m is the boundary-layer test
             # the DEMOVOR PBL / free-troposphere fractions use.
-            tke_p  = interpolateW(false, tkeF, ix, iy, il, it)
+            # tke is a half-level (class H) field: plain read at indl
+            tke_p  = Operators.interpolation4Dlevsingle(tkeF, ix, iy, il, it)
             pblh_p = interpolate2Dsingle(pblhF, ix, iy, it)
             println(io, tstr, ',', state.id[i], ',',
                     @sprintf("%.5g,%.5g,%.5g,%.5g,%.5g", lon, lat, h, tke_p, pblh_p))
@@ -117,7 +118,7 @@ function traj_write!(tw, state, ctx, currentdate, indt, istep::Int)
         age = Dates.value(state.Dtime[i] - state.Dtimeinit[i]) / 1000.0   # s
         print(io, tstr, ',', state.id[i], ',', lon, ',', lat, ',', h, ',',
               state.nest[i], ',', state.mass[i], ',', age)
-        rho_p  = interpolateW(false, rhoF, ix, iy, il, it)
+        rho_p  = Operators.interpolation4Dsingle(rhoF, ix, iy, il, it)   # class F: stacked
         pblh_p = interpolate2Dsingle(pblhF, ix, iy, it)
         println(io, ',', rho_p, ',', pblh_p)
     end

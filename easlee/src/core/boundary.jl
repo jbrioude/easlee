@@ -23,17 +23,21 @@
 
 # ── Face-metric helpers ───────────────────────────────────────────────────────
 # Physical width [m] of a West/East boundary face cell (its north–south extent).
-@inline _face_dy_m(gc::Rectilinear, ::Float32) = 1.0f0 / gc.dyconst   # = dlat·111320 m
-@inline _face_dy_m(gc::Lambert,     ::Float32) = gc.dy                 # constant [m]
+# Lambert: a grid step covers DX/m on the ground (lambert_mapfac; was the
+# constant DX until 2026-10-13, which biased boundary inflow and the domain air
+# mass by the map factor).
+@inline _face_dy_m(gc::Rectilinear, ::Float32, ::Float32) = 1.0f0 / gc.dyconst   # = dlat·111320 m
+@inline _face_dy_m(gc::Lambert, indx::Float32, indy::Float32) = gc.dy / lambert_mapfac(gc, indx, indy)
 
 # Physical width [m] of a South/North boundary face cell (its west–east extent).
-@inline function _face_dx_m(gc::Rectilinear, indy::Float32)
+@inline function _face_dx_m(gc::Rectilinear, ::Float32, indy::Float32)
     lat = gc.latmin + (indy - 1.0f0) * gc.dlat
     return cosd(lat) / gc.dxconst       # = dlon·111320·cos(lat) m
 end
-@inline _face_dx_m(gc::Lambert, ::Float32) = gc.dx                     # constant [m]
+@inline _face_dx_m(gc::Lambert, indx::Float32, indy::Float32) = gc.dx / lambert_mapfac(gc, indx, indy)
 
-# Layer thickness Δz [m] between level indices k and k+1.
+# Layer thickness Δz [m] between level indices k and k+1 (half levels: the
+# layer that holds full level k+1).
 @inline function _dz_lev(zarr, indx::Float32, indy::Float32, k::Int, indt::Float32)
     z_lo = interpolation4Dlevsingle(zarr, indx, indy, Float32(k),   indt)
     z_hi = interpolation4Dlevsingle(zarr, indx, indy, Float32(k+1), indt)
@@ -104,17 +108,21 @@ function _inject_x_face!(state, gc, met, Nk::Int, Nj::Int, nest_id::Int,
 
     @inbounds for j in 1:(Nj - 1)
         jf = Float32(j) + 0.5f0        # column centre in y
-        dy = _face_dy_m(gc, jf)
+        dy = _face_dy_m(gc, indx_face, jf)
 
         for k in 1:(Nk - 1)
+            # Layer [zlev[k], zlev[k+1]) holds full level k+1: its wind and
+            # density are read at the layer's mid index with the stacked read
+            # (= slot k+1; layout contract 2026-10-22).  Was the plain read at
+            # k + 1/2, the mean of slots k and k+1: half a level low.
             kf  = Float32(k) + 0.5f0
-            u   = interpolation4Dlevsingle(uarr,   indx_face, jf, kf, indt)
+            u   = interpolateU(gc.Uedge, uarr, indx_face, jf, kf, indt)
             u_in = u * u_sign
             # NaN <= 0 is false in IEEE 754, so isfinite guard is required —
             # WRF terrain-masked cells can produce NaN winds.
             (isfinite(u_in) && u_in > 0.0f0) || continue
 
-            rho  = interpolation4Dlevsingle(rhoarr, indx_face, jf, kf, indt)
+            rho  = interpolation4Dsingle(rhoarr, indx_face, jf, kf, indt)
             (isfinite(rho) && rho > 0.0f0) || continue
             dz   = _dz_lev(zarr, indx_face, jf, k, indt)
             flux = rho * u_in * dy * dz * dt   # incoming mass [kg]
@@ -158,15 +166,15 @@ function _inject_y_face!(state, gc, met, Nk::Int, Ni::Int, nest_id::Int,
 
     @inbounds for i in 1:(Ni - 1)
         if_ = Float32(i) + 0.5f0       # column centre in x
-        dx  = _face_dx_m(gc, indy_face)
+        dx  = _face_dx_m(gc, if_, indy_face)
 
         for k in 1:(Nk - 1)
-            kf   = Float32(k) + 0.5f0
-            v    = interpolation4Dlevsingle(varr,   if_, indy_face, kf, indt)
+            kf   = Float32(k) + 0.5f0      # layer mid index → full level k+1
+            v    = interpolateV(gc.Vedge, varr, if_, indy_face, kf, indt)
             v_in = v * v_sign
             (isfinite(v_in) && v_in > 0.0f0) || continue
 
-            rho  = interpolation4Dlevsingle(rhoarr, if_, indy_face, kf, indt)
+            rho  = interpolation4Dsingle(rhoarr, if_, indy_face, kf, indt)
             (isfinite(rho) && rho > 0.0f0) || continue
             dz   = _dz_lev(zarr, if_, indy_face, k, indt)
             flux = rho * v_in * dx * dz * dt
@@ -201,7 +209,8 @@ end
     compute_domain_mass(nestctx, indt) → Float32
 
 Estimate the total air mass [kg] in the domain by integrating ρ·dV over all
-grid cells.  Call once at startup to set:
+grid cells (layer [zlev[k], zlev[k+1]) × ρ of the full level k+1 it holds).
+Call once at startup to set:
 
     mass_per_parcel = compute_domain_mass(nestctx, indt) / NPARTS
 """
@@ -218,12 +227,12 @@ function compute_domain_mass(nestctx, indt::Float32)
         jf  = Float32(j) + 0.5f0
         if_ = Float32(i) + 0.5f0
         kf  = Float32(k) + 0.5f0
-        rho = interpolation4Dlevsingle(rhoarr, if_, jf, kf, indt)
+        rho = interpolation4Dsingle(rhoarr, if_, jf, kf, indt)   # full level k+1 (stacked)
         (isfinite(rho) && rho > 0.0f0) || continue   # skip terrain-masked NaN cells
         dz  = _dz_lev(zarr, if_, jf, k, indt)
         isfinite(dz) || continue
-        dx  = _face_dx_m(gc, jf)
-        dy  = _face_dy_m(gc, jf)
+        dx  = _face_dx_m(gc, if_, jf)
+        dy  = _face_dy_m(gc, if_, jf)
         total += rho * dx * dy * dz
     end
     return total
@@ -281,6 +290,12 @@ function inject_boundary_parcels!(state::State.ParcelState, ctx,
         # @inbounds interpolation in the inner loops remains safe.
         #
         # West  OUTGRID face at xout = 1.0 → indx = (1 - offsetx)/coeffx
+        if gc isa Lambert && gc.geoout
+            # geographic output on a Lambert nest: its edges are not straight in
+            # the met grid (2026-10-13) — inject on the met-domain faces instead
+            indx_w = 1.0f0;  indx_e = Float32(Ni) - 0.5f0
+            indy_s = 1.0f0;  indy_n = Float32(Nj) - 0.5f0
+        else
         indx_w = clamp((1.0f0 - gc.offsetx) / gc.coeffx, 1.0f0, Float32(Ni - 1))
         # East  OUTGRID face at xout = Niout + 0.5 (centre of last column, inflow from east)
         indx_e = clamp((Float32(Niout) + 0.5f0 - gc.offsetx) / gc.coeffx,
@@ -290,6 +305,7 @@ function inject_boundary_parcels!(state::State.ParcelState, ctx,
         # North OUTGRID face at yout = Njout + 0.5 (centre of last row, inflow from north)
         indy_n = clamp((Float32(Njout) + 0.5f0 - gc.offsety) / gc.coeffy,
                         1.0f0, Float32(Nj) - 0.5f0)
+        end
 
         # West  (inflow when U > 0)
         n_total += _inject_x_face!(state, gc, met, Nk, Nj, n,

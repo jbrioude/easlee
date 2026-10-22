@@ -23,11 +23,6 @@ end
 
 @inline _dytodindy_rect(g::Rectilinear, dy::Float32) = dy * g.dyconst
 
-@inline function _dxtodindx_lambert(g::Lambert, dx::Float32)
-    return dx / g.dx
-end
-
-@inline _dytodindy_lambert(g::Lambert, dy::Float32) = dy / g.dy
 
 # ── mesoscale sigma over the 2x2x2x2 met neighbourhood (GPU-safe twin of
 # _std16 / _mesoscale_sigmas in advance.jl) ──────────────────────────────────
@@ -43,12 +38,14 @@ end
     return var > 0.0f0 ? sqrt(var) : 0.0f0
 end
 
+# u, v class F (stacked base), levdot class H — as _mesoscale_sigmas (advance.jl).
 @inline function _mesoscale_sigmas_4d(uarr, varr, warr, xi::Float32, yi::Float32,
                                       zi::Float32, nz_int::Int)
     i0 = clamp(Base.unsafe_trunc(Int, xi), 1, size(uarr, 1) - 1)
     j0 = clamp(Base.unsafe_trunc(Int, yi), 1, size(uarr, 2) - 1)
     k0 = clamp(Base.unsafe_trunc(Int, zi), 1, nz_int - 1)
-    return (_std16_4d(uarr, i0, j0, k0), _std16_4d(varr, i0, j0, k0), _std16_4d(warr, i0, j0, k0))
+    kF = clamp(_split_z_stagger(zi)[2], 1, nz_int - 1)
+    return (_std16_4d(uarr, i0, j0, kF), _std16_4d(varr, i0, j0, kF), _std16_4d(warr, i0, j0, k0))
 end
 
 # ── Inner parcel body (generic, inlined into the kernel) ──────────────────────
@@ -66,7 +63,6 @@ end
     theta_arr   ::AbstractArray{Float32,4},
     tke_arr     ::AbstractArray{Float32,4},
     rho_arr    ::AbstractArray{Float32,4},
-    drhodz_arr ::AbstractArray{Float32,4},
     # 2026-09-21: surface parameters for on-the-fly Hanna (length-0 when off)
     ustar_arr  ::AbstractArray{Float32,3},
     pblh_arr   ::AbstractArray{Float32,3},
@@ -139,12 +135,13 @@ end
         vy     ::Float32 = interpolateV(gridconfig.Vedge, varray,      indx_r, indy_r, indl_r, indt_n)
         levdot ::Float32 = interpolateW(gridconfig.Wedge, levdotarray, indx_r, indy_r, indl_r, indt_n)
 
-        # [physics].surface_layer_wind — below the lowest model level the archived
-        # wind is a slab; put the parcel back on the Monin-Obukhov similarity
-        # profile anchored at that level (mirrors advance.jl:261-277).
-        if use_mo && indl_r < 2.0f0
-            z_sl  ::Float32 = interpolation4Dlevsingle(zlev_arr, indx_r, indy_r, indl_r, indt_n)
-            z1_sl ::Float32 = interpolation4Dlevsingle(zlev_arr, indx_r, indy_r, 2.0f0,  indt_n)
+        # [physics].surface_layer_wind — below the lowest full level (indl 1.5,
+        # layout contract) the archived wind is a slab; put the parcel back on the
+        # Monin-Obukhov similarity profile anchored at that level (mirrors the
+        # CPU kernel, advance.jl).
+        if use_mo && indl_r < MO_ANCHOR_INDL
+            z_sl  ::Float32 = interpolation4Dlevsingle(zlev_arr, indx_r, indy_r, indl_r,         indt_n)
+            z1_sl ::Float32 = interpolation4Dlevsingle(zlev_arr, indx_r, indy_r, MO_ANCHOR_INDL, indt_n)
             if isfinite(z_sl) && z_sl < z1_sl
                 ust_sl ::Float32 = interpolate2Dsingle(ustar_arr, indx_r, indy_r, indt_n)
                 ol_sl  ::Float32 = interpolate2Dsingle(ol_arr,    indx_r, indy_r, indt_n)
@@ -206,13 +203,13 @@ end
                     wst_h  ::Float32 = hanna_wstar(ust_h, pbl_h, ol_h)
                     turbulence_hanna_4d(indl_safe, indx_safe, indy_safe,
                                         dt, ldt, ifine, wp, indt_n, nk, rng_st,
-                                        zlev_arr, rho_arr, drhodz_arr,
+                                        zlev_arr, rho_arr,
                                         ust_h, pbl_h, wst_h, ol_h, Float32(sigw_ft))
                 else
                     turbulence_v3_4d(turb, indl_safe, indx_safe, indy_safe,
                                      dt, ldt, ifine, wp, indt_n, nk, rng_st,
                                      zlev_arr, theta_arr, tke_arr,
-                                     rho_arr, drhodz_arr, vmix)
+                                     rho_arr, vmix)
                 end
 
             totdelz += delz
@@ -326,9 +323,9 @@ end
 # Dispatch wrappers so the compiler can monomorphise _advance_one! on grid type.
 @inline _dxtodindx(g::Rectilinear, dx, indx, indy) =
     dx * g.dxconst / cos(((indy - 1.0f0) * g.dy + g.latmin) * Float32(π) / 180.0f0)
-@inline _dxtodindx(g::Lambert, dx, indx, indy) = dx / g.dx
+@inline _dxtodindx(g::Lambert, dx, indx, indy) = dx * lambert_mapfac(g, indx, indy) / g.dx
 @inline _dytodindy(g::Rectilinear, dy, indx, indy) = dy * g.dyconst
-@inline _dytodindy(g::Lambert, dy, indx, indy)     = dy / g.dy
+@inline _dytodindy(g::Lambert, dy, indx, indy)     = dy * lambert_mapfac(g, indx, indy) / g.dy
 # Mercator (Meso-NH): delegate to the GPU-safe coords formula (cosd/atan/exp/log).
 @inline _dxtodindx(g::Mercator, dx, indx, indy) = dxtodindx(g, dx, indx, indy)
 @inline _dytodindy(g::Mercator, dy, indx, indy) = dytodindy(g, dy, indx, indy)
@@ -355,6 +352,9 @@ end
     # met arrays (read-only)
     @Const(uarray), @Const(varray), @Const(levdotarray),
     @Const(zlev_arr), @Const(theta_arr), @Const(tke_arr),
+    # drhodz_arr: no longer read (∂ρ/∂z is formed at the half levels from rho,
+    # met/interp.jl); kept in the argument list the GPU launcher
+    # (advance_ka_gpu.jl) passes positionally.
     @Const(rho_arr), @Const(drhodz_arr),
     # 2026-09-21: surface parameters for ON-THE-FLY Hanna (3-D: Ni x Nj x 2 slots).
     # Zero-length arrays when use_hanna is false — KA still needs the argument.
@@ -425,7 +425,7 @@ end
             mesou_n, mesov_n, mesow_n =
                 _advance_one!(indx_r, indy_r, indl_r, up, vp, wp, ldt, rng_st,
                               uarray, varray, levdotarray,
-                              zlev_arr, theta_arr, tke_arr, rho_arr, drhodz_arr,
+                              zlev_arr, theta_arr, tke_arr, rho_arr,
                               ustar_arr, pblh_arr, ol_arr, _kb(use_hanna), Float32(sigw_ft),
                               mesou_arr[i], mesov_arr[i], mesow_arr[i],
                               _kb(use_meso), Float32(fturbmeso), Float32(r_meso), Float32(rs_meso),
@@ -437,7 +437,7 @@ end
             mesou_n, mesov_n, mesow_n =
                 _advance_one!(indx_r, indy_r, indl_r, up, vp, wp, ldt, rng_st,
                               uarray, varray, levdotarray,
-                              zlev_arr, theta_arr, tke_arr, rho_arr, drhodz_arr,
+                              zlev_arr, theta_arr, tke_arr, rho_arr,
                               ustar_arr, pblh_arr, ol_arr, false, 0.1f0,
                               mesou_arr[i], mesov_arr[i], mesow_arr[i],
                               _kb(use_meso), Float32(fturbmeso), Float32(r_meso), Float32(rs_meso),
@@ -570,8 +570,8 @@ end
         tke_z  = interpolation4Dlevsingle(tke_arr,  safe_indx, safe_indy, indl, indt_n)
         z_here = interpolation4Dlevsingle(zlev_arr, safe_indx, safe_indy, indl, indt_n)
 
-        indz  = clamp(Base.unsafe_trunc(Int32, indl), Int32(1), nk - Int32(1))
-        indzp = indz + Int32(1)
+        indz  = clamp(Base.unsafe_trunc(Int, indl), 1, Int(nk) - 1)
+        indzp = indz + 1
 
         yl = turbulent_length_scale_v2_4d(indz, indzp, tke_z, z_here,
                                            safe_indx, safe_indy, indt_n, nk,

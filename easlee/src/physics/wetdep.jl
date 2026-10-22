@@ -123,11 +123,13 @@ function _wetdep_nest!(state, nestctx, cf, dt::Float32, indt, idx,
                                        indt) * 3600.0f0
         (isfinite(I_here) && I_here > p.I_min) || continue
 
-        # Cloud context: fraction at parcel level + column maximum (for the
-        # precipitating-area estimate fp).
+        # Cloud context: fraction of the layer containing the parcel + column
+        # maximum (for the precipitating-area estimate fp).  cc is a layer
+        # quantity on the full levels: full level k spans zlev[k-1]..zlev[k]
+        # (layout contract), so the parcel's layer is slot floor(indl) + 1.
         cc_prof = ccbufs[tid]
         get_vertical_profile!(cc_prof, cf.cc, indx, indy, indt, nz)
-        k0 = clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, nz - 1)
+        k0 = clamp(Base.unsafe_trunc(Int, state.indl[i]) + 1, 2, nz)
         cc_here = cc_prof[k0]
         cc_max  = 0.0f0
         @inbounds for k in 1:nz

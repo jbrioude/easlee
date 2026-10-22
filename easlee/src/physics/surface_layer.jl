@@ -1,11 +1,13 @@
 # ── Monin-Obukhov surface-layer wind ([physics].surface_layer_wind) ──────────
 #
 # The archived wind is constant-extended to the ground: the reader copies the
-# lowest model level into the surface slot (io/metcalc_models.jl, k = 1 gets
-# k = 2's wind at zlev = 0), so the interpolated profile below the lowest level
-# is a SLAB.  Measured on the ETEX ERA5 archive (docs/INTERP_ERROR_ATLAS.md):
-# the lowest level sits at ~19.6 m, so a parcel at 2 m over land carries ~1.8×
-# the wind similarity theory gives it, and every parcel below 10 m is affected.
+# lowest full level into the surface slot (layout contract 2026-10-22: U, V
+# slot 1 = slot 2), so the interpolated profile below the lowest full level is a
+# SLAB.  That level is read at indl = 1.5 (MO_ANCHOR_INDL), height
+# zf(2) = ½(zlev[1] + zlev[2]) = ½·zlev[2] — on ERA5 L137 about 10 m, half the
+# ~19.6 m of zlev[2] that the ETEX atlas (docs/INTERP_ERROR_ATLAS.md) and the
+# pre-contract code took as the lowest wind level.  For indl in [1.5, 2) the
+# wind already blends the two lowest full levels and is left alone.
 #
 # Similarity theory instead gives, in the constant-flux layer,
 #
@@ -21,12 +23,16 @@
 # neutral-log-law inversion), instead of introducing a second roughness length.
 #
 # Direction is preserved: the surface layer's Ekman turning is small compared
-# with the speed shear over the first 20 m, and the archived wind carries no
-# information to resolve it.
+# with the speed shear below the lowest full level, and the archived wind
+# carries no information to resolve it.
 #
 # ψ_m: Businger-Dyer / Paulson (1970), as in FLEXPART.
 
 const _MO_KARMAN = 0.4f0
+
+# Level index of the anchor (the lowest full level, class F slot 2): the rescaling
+# applies for indl < MO_ANCHOR_INDL, with z1 = zlev interpolated there.
+const MO_ANCHOR_INDL = 1.5f0
 
 @inline function _psi_m(zeta::Float32)
     if zeta < 0.0f0                       # unstable
