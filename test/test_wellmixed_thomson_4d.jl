@@ -10,18 +10,28 @@
 # showed up as a +1.7 % mass offset between the KA and threads advances in an
 # all-switches-off control.  After the 2026-09-22 alignment both bodies should
 # pass, with the same PBL air-mass fraction.
+# Layout contract 2026-10-22: θ and ρ are given class F (slot 1 = surface, slot k
+# at zf(k) = ½(zlev[k-1] + zlev[k])); the CPU body gets them through the
+# production half-level builders, the KA body forms the same half-level values
+# from the 4-D arrays (no drhodz array).  Until then both were co-located with zlev.
 using Printf, Statistics, Random
 include("../easlee/EASLEE.jl"); using .EASLEE
 using .EASLEE.Operators: turbulence_v3, turbulence_v3_4d, hanna_wstar, hanna_sigw_tlw,
-                         interpolation1Dsingleirreg, interpolation4D_irregzsingle, VMixClosure
+                         interpolation1Dsingleirreg, interpolation4D_irregzsingle, VMixClosure,
+                         full_to_half_levels!, half_level_gradient!
 using .EASLEE.Types: Thomson
 const NZ = 81; const ZTOP = 4000.0f0; const N = 100_000; const DT = 900.0f0; const NSTP = 96
 height  = Float32.(range(0, ZTOP, length=NZ))
-rho     = 1.2f0 .* exp.(-height ./ 8500.0f0); rhograd = -rho ./ 8500.0f0
-ptt     = Float32[300.0f0 + 0.004f0 * z for z in height]          # stable-ish θ profile for the length scale
+zf      = Float32[k == 1 ? height[1] : 0.5f0 * (height[k-1] + height[k]) for k in 1:NZ]
+rhoF    = 1.2f0 .* exp.(-zf ./ 8500.0f0)                          # class F, as archived
+pttF    = Float32[300.0f0 + 0.004f0 * z for z in zf]               # stable-ish θ profile for the length scale
+rhograd = half_level_gradient!(similar(rhoF), rhoF, height, NZ)   # CPU profiles: the production builders
+rho_h   = full_to_half_levels!(copy(rhoF), NZ)
+ptt_h   = full_to_half_levels!(copy(pttF), NZ)
 mk4(v) = (a = Array{Float32,4}(undef, 2, 2, NZ, 2); for i in 1:2, j in 1:2, k in 1:NZ, t in 1:2; a[i,j,k,t] = v[k]; end; a)
-zlev4, rho4, grad4, ptt4 = mk4(height), mk4(rho), mk4(rhograd), mk4(ptt)
+zlev4, rho4, ptt4 = mk4(height), mk4(rhoF), mk4(pttF)
 vm = VMixClosure(false, NaN32, NaN32)                  # the Hanna-fill closure (wshare = 1)
+rho    = 1.2f0 .* exp.(-height ./ 8500.0f0)            # analytic, for the air-mass sampling
 layerm = [0.5f0*(rho[k]+rho[k+1]) * (height[k+1]-height[k]) for k in 1:NZ-1]
 cm = cumsum(layerm); cm ./= cm[end]
 expect_frac(pblh) = (1 - exp(-pblh/8500.0f0)) / (1 - exp(-ZTOP/8500.0f0))
@@ -53,7 +63,7 @@ function run_case(name, ustar, pblh, ol)
                 indl = interpolation1Dsingleirreg(height, z[p])
                 for s in 1:NSTP
                     zp, _, w, ldt, _, _ = turbulence_v3(Thomson(true, false), indl, DT, ldt, 5.0f0, w,
-                                                       height, ptt, tke, rho, rhograd; vm=vm)
+                                                       height, ptt_h, tke, rho_h, rhograd; vm=vm)
                     indl = interpolation1Dsingleirreg(height, zp); z[p] = zp
                 end
             else
@@ -61,7 +71,7 @@ function run_case(name, ustar, pblh, ol)
                 st = UInt64(0x9E3779B97F4A7C15) * UInt64(p) + UInt64(3)
                 for s in 1:NSTP
                     zp, _, w, ldt, _, _, st = turbulence_v3_4d(Thomson(true, false), indl, 1.5f0, 1.5f0, DT, ldt, 5.0f0, w,
-                                                               1.0f0, Int32(NZ), st, zlev4, ptt4, tke4, rho4, grad4, vm)
+                                                               1.0f0, Int32(NZ), st, zlev4, ptt4, tke4, rho4, vm)
                     indl = interpolation4D_irregzsingle(zlev4, 1.5f0, 1.5f0, zp, 1.0f0, Int32(1), Int32(NZ)); z[p] = zp
                 end
             end

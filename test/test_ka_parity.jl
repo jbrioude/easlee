@@ -43,6 +43,9 @@ function check(name, ok; info = "")
 end
 
 # ── synthetic met: flat terrain, 250 m levels, neutral column, PBL to 1 km ────
+# Layout contract 2026-10-22: zlev and tke on the half levels (zlev[1] = ground),
+# theta/rho class F (slot 1 = surface, slot k at ½(zlev[k-1] + zlev[k])).  rho was
+# co-located with zlev until then; drhodz is no longer read by the turbulence.
 const NI = 16; const NJ = 16; const NZ = 40; const DZ = 250.0
 const PBLH = 1000.0                       # σ_w = 1 m/s below, floor above
 const W0   = 1.0f-3                       # levdot [level/s] → 0.9 level per 900 s step
@@ -51,11 +54,12 @@ dims = (NI, NJ, NZ, 2)
 zlev = zeros(Float32, dims); theta = zeros(Float32, dims); rho = zeros(Float32, dims)
 drhodz = zeros(Float32, dims); tke = zeros(Float32, dims)
 for k in 1:NZ
-    z = (k - 1) * DZ
+    z  = (k - 1) * DZ
+    zf = k == 1 ? 0.0 : (k - 1.5) * DZ                  # full-level height of slot k
     zlev[:, :, k, :]   .= Float32(z)
     theta[:, :, k, :]  .= 300.0f0                       # neutral: N² = 0
-    rho[:, :, k, :]    .= Float32(1.2 * exp(-z / 8000.0))
-    drhodz[:, :, k, :] .= Float32(-1.2 / 8000.0 * exp(-z / 8000.0))
+    rho[:, :, k, :]    .= Float32(1.2 * exp(-zf / 8000.0))
+    drhodz[:, :, k, :] .= Float32(-1.2 / 8000.0 * exp(-zf / 8000.0))
     # Hanna-fill convention: field = 0.5·σ_w²  (σ_w = 1 m/s in the PBL)
     tke[:, :, k, :]    .= z < PBLH ? 0.5f0 : 0.0f0
 end

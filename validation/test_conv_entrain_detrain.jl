@@ -29,6 +29,11 @@
 #     test/test_conv_entrain_detrain.jl
 #
 # Output: results/convtest_<name>.tsv (per-level profiles) + printed summary.
+#
+# Vertical layout (stacked, as the readers deliver it): zlev on the half levels, rho,
+# umf, dmf, udr, ddr, T, puv, qv on the full levels; layer k (k ≥ 2) is the full level
+# between zlev[k-1] and zlev[k], air mass rho[k]·Δz, parcels with indl ∈ [k-1, k);
+# interface k sits at zlev[k] with flux ½(umf[k]+umf[k+1]) (0 at the ground, k = 1).
 
 using Dates, Printf, Statistics, Random
 global gpu = false
@@ -95,13 +100,13 @@ prof(Af) = (b = Vector{Float32}(undef, Nk); Op.get_vertical_profile!(b, Af, fx, 
 z   = prof(nest.metfields3D.zlev)
 rho = prof(nest.metfields3D.rho)
 
-# layer air mass dm[k] with the same floors as _build_conv_column!
+# layer air mass dm[k] = rho[k]·(zlev[k] − zlev[k-1]), same floors as _build_conv_column!
 dm = zeros(Float32, Nk)
-for k in 1:Nk-1
-    dz = max(z[k+1] - z[k], 1.0f0)
-    dm[k] = 0.5f0 * (max(rho[k],1f-4) + max(rho[k+1],1f-4)) * dz
+for k in 2:Nk
+    dz = max(z[k] - z[k-1], 1.0f0)
+    dm[k] = max(rho[k], 1f-4) * dz
 end
-keep = [k for k in 1:Nk-1 if isfinite(dm[k]) && dm[k] > 0 && isfinite(z[k]) && z[k] < ZCAP]
+keep = [k for k in 2:Nk if isfinite(dm[k]) && dm[k] > 0 && isfinite(z[k-1]) && z[k-1] < ZCAP]
 
 # ── seed NP parcels uniform in air mass, pinned to the column ─────────────────
 w = Float64[dm[k] for k in keep]; w ./= sum(w)
@@ -113,7 +118,7 @@ for (kk, k) in enumerate(keep), _ in 1:cnt[kk]
     @inbounds begin
         state.status[s] = 0x01; state.nest[s] = Int8(1); state.relbox[s] = Int32(1)
         state.indx[s] = fx; state.indy[s] = fy
-        state.indl[s] = Float32(k) + rand(rng, Float32)
+        state.indl[s] = Float32(k - 1) + rand(rng, Float32)      # layer k: indl ∈ [k-1, k)
         state.Dtime[s] = loopstart; state.Dtimeinit[s] = loopstart
         state.is_new[s] = false; state.dt[s] = 1f0; state.mass[s] = Float32(mass_pp)
         state.uturb[s] = 0f0; state.vturb[s] = 0f0; state.wturb[s] = 0f0
@@ -123,7 +128,9 @@ np = count(==(0x01), state.status); EASLEE.State.sync_dtime_ns!(state)
 @printf("seeded %d parcels uniform-in-air-mass over levels %d…%d (z<%.0f m), m_pp=%.4g kg/m²\n",
         np, keep[1], keep[end], ZCAP, mass_pp)
 
-k0 = [clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, Nk-1) for i in 1:np]
+layer_of(x) = clamp(Base.unsafe_trunc(Int, x) + 1, 2, Nk)
+k0  = [layer_of(state.indl[i]) for i in 1:np]
+zp0 = [Op._z_at(z, state.indl[i], Nk) for i in 1:np]    # parcel heights before the step
 
 # ── ONE convective step ───────────────────────────────────────────────────────
 if massflux
@@ -131,7 +138,7 @@ if massflux
 else
     diagnostic_convection!(state, ctx, obj.diagconv, DTS, t_array; params=obj.diagconvparams)
 end
-k1 = [clamp(Base.unsafe_trunc(Int, state.indl[i]), 1, Nk-1) for i in 1:np]
+k1 = [layer_of(state.indl[i]) for i in 1:np]
 
 nmoved = count(k1 .!= k0)
 @printf("moved: %d parcels (%.2f%%)\n", nmoved, 100nmoved/np)
@@ -152,8 +159,8 @@ if massflux
     udr = prof(cf.udr);  udr .= max.(udr, 0f0)
     ddr = prof(cf.ddr);  ddr .= max.(ddr, 0f0)
 
-    muif(k) = (k < 1 || k >= Nk) ? 0f0 : 0.5f0*(mu[k]+mu[k+1])   # interface fluxes
-    mdif(k) = (k < 1 || k >= Nk) ? 0f0 : 0.5f0*(md[k]+md[k+1])
+    muif(k) = (k < 2 || k >= Nk) ? 0f0 : 0.5f0*(mu[k]+mu[k+1])   # interface fluxes at zlev[k]
+    mdif(k) = (k < 2 || k >= Nk) ? 0f0 : 0.5f0*(md[k]+md[k+1])
 
     # parcel-derived interface crossings (net displacement)
     fup = zeros(Float64, Nk); fdn = zeros(Float64, Nk)
@@ -175,7 +182,7 @@ if massflux
 
     dflux = [max(muif(k-1) - muif(k), 0f0) for k in 1:Nk]   # flux-divergence detrainment
     eflux = [max(muif(k) - muif(k-1), 0f0) for k in 1:Nk]   # flux-divergence entrainment
-    dz    = [k < Nk ? max(z[k+1]-z[k], 1f0) : 1f0 for k in 1:Nk]
+    dz    = [k > 1 ? max(z[k]-z[k-1], 1f0) : 1f0 for k in 1:Nk]  # layer k thickness
     darch = [udr[k] * dz[k] for k in 1:Nk]                  # archived detrainment per layer
     earch = [darch[k] + (muif(k) - muif(k-1)) for k in 1:Nk] # archived-implied entrainment
 
@@ -198,10 +205,11 @@ if massflux
 
     open(out, "w") do io
         println(io, "# one-step conv test  scheme=massflux  cfg=$(basename(CFG))  NP=$np  dt=$(DTS)s  cell=($ic,$jc)  umfmax=$bestv")
-        println(io, "k\tz\tdm\tmu\tmd\tmuif\tmdif\tfup\tfdn\tepar\tdpar\teflux\tdflux\tearch\tdarch\tchi")
+        println(io, "# layer k = full level k between zbot = zlev[k-1] and ztop = zlev[k]; muif, mdif, fup, fdn at ztop")
+        println(io, "k\tzbot\tztop\trho\tdm\tmu\tmd\tmuif\tmdif\tfup\tfdn\tepar\tdpar\teflux\tdflux\tearch\tdarch\tchi")
         for k in keep
-            @printf(io, "%d\t%.1f\t%.3f\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.4f\n",
-                    k, z[k], dm[k], mu[k], md[k], muif(k), mdif(k), fup[k], fdn[k],
+            @printf(io, "%d\t%.1f\t%.1f\t%.5g\t%.3f\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.5g\t%.4f\n",
+                    k, z[k-1], z[k], rho[k], dm[k], mu[k], md[k], muif(k), mdif(k), fup[k], fdn[k],
                     epar[k], dpar[k], eflux[k], dflux[k], max(earch[k],0), darch[k],
                     cdest[k]*mass_pp/dm[k])
         end
@@ -217,19 +225,20 @@ else
         (pp[2] / (287.05f0 * max(rho[2],1f-4) * max(T[2],150f0)) - 1f0) / 0.608f0
     end
     the_p = Op._theta_e_bolton(T[2], pp[2], max(q2, 0f0))
-    kel = 0
+    kel = 0; zel = NaN32                      # EL height = full level kel, ½(zlev[kel-1]+zlev[kel])
     for k in Nk:-1:3
-        (isfinite(z[k]) && z[k] <= 17000f0) || continue
+        zf = 0.5f0 * (z[k-1] + z[k])
+        (isfinite(zf) && zf <= 17000f0) || continue
         thes = Op._theta_e_bolton(T[k], max(pp[k],100f0), Op._qsat_bolton(T[k], max(pp[k],100f0)))
-        if the_p > thes; global kel = k; break; end
+        if the_p > thes; global kel = k; global zel = zf; break; end
     end
     @printf("diagnosed EL: level %d  z=%.0f m  (θe_parcel=%.1f K, q_src=%.4g)\n",
-            kel, kel > 0 ? z[kel] : NaN, the_p, q2)
+            kel, zel, the_p, q2)
 
     moved_up   = count(i -> k1[i] != k0[i], 1:np)
     below      = kel > 0 ? [i for i in 1:np if k0[i] < kel] : Int[]
     movedbelow = count(i -> k1[i] != k0[i], below)
-    above      = kel > 0 ? [i for i in 1:np if z[k0[i]] > (kel>0 ? z[kel] : Inf32)] : Int[]
+    above      = kel > 0 ? [i for i in 1:np if zp0[i] > zel] : Int[]
     touchedabove = count(i -> k1[i] != k0[i], above)
     @printf("below-EL parcels moved: %d/%d (%.1f%%)   above-EL touched: %d (must be 0)\n",
             movedbelow, length(below), 100movedbelow/max(length(below),1), touchedabove)
@@ -242,10 +251,10 @@ else
             std(chimv), minimum(chimv), maximum(chimv))
     open(out, "w") do io
         println(io, "# one-step conv test  scheme=cape  cfg=$(basename(CFG))  NP=$np  dt=$(DTS)s  cell=($ic,$jc)  cape=$bestv  kel=$kel")
-        println(io, "k\tz\tdm\tcmoved\tchi_moved\tchi_all")
+        println(io, "k\tzbot\tztop\tdm\tcmoved\tchi_moved\tchi_all")
         for k in keep
             cm = cmv[k]/dm[k]; cnorm = isempty(kk) ? NaN : cm/mean([cmv[q]/dm[q] for q in kk])
-            @printf(io, "%d\t%.1f\t%.3f\t%d\t%.4f\t%.4f\n", k, z[k], dm[k], cmv[k],
+            @printf(io, "%d\t%.1f\t%.1f\t%.3f\t%d\t%.4f\t%.4f\n", k, z[k-1], z[k], dm[k], cmv[k],
                     k in kk ? cnorm : NaN, cdest[k]*mass_pp/dm[k])
         end
     end

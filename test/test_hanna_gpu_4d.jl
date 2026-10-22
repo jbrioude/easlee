@@ -10,6 +10,11 @@
 #   [2] the stochastic half agrees in distribution (mean, spread) over many parcels
 #   [3] a parcel is never pushed through the ground or the model top
 #   [4] the surface parameters reach the result: changing u*, h or L changes it
+# Layout contract 2026-10-22: rho4 is class F (slot 1 = surface, slot k at
+# zf(k) = ½(zlev[k-1] + zlev[k])); the CPU body reads the half-level profiles the
+# production builders make from it, the 4-D body forms the same values from the
+# arrays — [1] pins that the two give identical ρ, ∂ρ/∂z and θ at any level.
+# Until then rho was co-located with zlev and a gradient array was passed.
 using Printf, Statistics
 const REPO = abspath(joinpath(@__DIR__, ".."))
 include(joinpath(REPO, "easlee", "src", "config", "EasleeConfig.jl")); using .EasleeConfig
@@ -26,12 +31,16 @@ end
 
 # a convective boundary layer: 40 levels, 0-4000 m, rho with a scale height
 const NK = 40
-zprof   = Float32[(k-1) * 100.0f0 for k in 1:NK]
-rhoprof = Float32[1.225f0 * exp(-z/8500.0f0) for z in zprof]
-gradprof= Float32[-1.225f0/8500.0f0 * exp(-z/8500.0f0) for z in zprof]
+zprof   = Float32[(k-1) * 100.0f0 for k in 1:NK]                       # zlev (half levels)
+zf      = Float32[k == 1 ? zprof[1] : 0.5f0 * (zprof[k-1] + zprof[k]) for k in 1:NK]
+rhoF    = Float32[1.225f0 * exp(-z/8500.0f0) for z in zf]               # class F, as archived
+thF     = Float32[300.0f0 + 0.003f0 * z + 2.0f0 * sin(z / 300.0f0) for z in zf]
+gradprof = EASLEE.Operators.half_level_gradient!(similar(rhoF), rhoF, zprof, NK)
+rhoprof  = EASLEE.Operators.full_to_half_levels!(copy(rhoF), NK)
+thprof   = EASLEE.Operators.full_to_half_levels!(copy(thF), NK)
 # the same column as 4-D arrays (2 x 2 horizontal, 2 time slots)
 mk4(v) = (a = Array{Float32,4}(undef, 2, 2, NK, 2); for i in 1:2, j in 1:2, k in 1:NK, t in 1:2; a[i,j,k,t] = v[k]; end; a)
-zlev4, rho4, grad4 = mk4(zprof), mk4(rhoprof), mk4(gradprof)
+zlev4, rho4, th4 = mk4(zprof), mk4(rhoF), mk4(thF)
 ustar, pblh, ol = 0.35f0, 1200.0f0, -50.0f0        # unstable, convective
 wstar = EASLEE.Operators.hanna_wstar(ustar, pblh, ol)
 hanna = EASLEE.Types.Hanna(true, 0.1f0)
@@ -50,6 +59,31 @@ z_1d = EASLEE.Operators.interpolation1Dsingle(zprof, indl)
 z_4d = EASLEE.Operators.interpolation4Dlevsingle(zlev4, 1.5f0, 1.5f0, indl, 1.0f0)
 check("the 4-D sampler reproduces the 1-D column height", isapprox(z_1d, z_4d; rtol=1e-6),
       info=@sprintf("%.3f vs %.3f m", z_1d, z_4d))
+# class-F fields at the half levels: CPU profile (builders + linear in indl) and
+# 4-D sampler must agree everywhere, including the surface and the top layer
+let wr = 0.0, wg = 0.0, wt = 0.0
+    for il in Float32[1.0, 1.3, 1.5, 2.0, 4.5, 17.25, NK - 1.5, NK - 1.0, NK - 0.01]
+        r4, g4 = EASLEE.Operators.half_level_density_4d(rho4, zlev4, 1.5f0, 1.5f0, il, 1.0f0)
+        wr = max(wr, abs(EASLEE.Operators.interpolation1Dsingle(rhoprof, il) - r4) / r4)
+        wg = max(wg, abs(EASLEE.Operators.interpolation1Dsingle(gradprof, il) - g4) / abs(g4))
+    end
+    for k in 1:NK
+        wt = max(wt, abs(thprof[k] - EASLEE.Operators.half_level_value_4d(th4, 1.5f0, 1.5f0, k, 1.0f0)))
+    end
+    check("rho at the half levels: 4-D sampler == CPU profile", wr < 1e-6, info=@sprintf("max rel %.1e", wr))
+    check("drho/dz at the half levels: 4-D sampler == CPU profile", wg < 1e-5, info=@sprintf("max rel %.1e", wg))
+    check("theta at the half levels: 4-D sampler == CPU profile", wt < 1e-4, info=@sprintf("max %.1e K", wt))
+end
+# the half-level values are the contract's: ground = slot 1, interior = mean of
+# the two adjacent full levels, top = slot NK; the gradient spans zf(k)..zf(k+1)
+check("rho_h(1) = surface slot, rho_h(k) = (rho[k] + rho[k+1])/2, rho_h(NK) = rho[NK]",
+      rhoprof[1] == rhoF[1] && rhoprof[NK] == rhoF[NK] &&
+      all(rhoprof[k] == 0.5f0 * (rhoF[k] + rhoF[k+1]) for k in 2:NK-1))
+check("drho/dz_h(k) = (rho[k+1] - rho[k]) / (zf(k+1) - zf(k))",
+      all(isapprox(gradprof[k], (rhoF[k+1] - rhoF[k]) / (zf[k+1] - zf[k]); rtol = 1e-5) for k in 1:NK-1))
+# and on a smooth column they are second-order close to the true half-level values
+check("half-level rho within 1e-4 of the analytic rho(zlev[k])",
+      maximum(abs.(rhoprof[2:NK-1] ./ (1.225f0 .* exp.(-zprof[2:NK-1] ./ 8500.0f0)) .- 1)) < 1e-4)
 
 println("\n[2] the stochastic half must agree in distribution")
 N = 20000
@@ -60,7 +94,7 @@ for i in 1:N
     push!(dz_cpu, delz)
     _, delz2, _, _, _, _, _ = EASLEE.Operators.turbulence_hanna_4d(indl, 1.5f0, 1.5f0, 300.0f0, 0.0f0, 5.0f0, 0.0f0,
                                                          1.0f0, Int32(NK), UInt64(0x9E3779B97F4A7C15 * i),
-                                                         zlev4, rho4, grad4, ustar, pblh, wstar, ol, 0.1f0)
+                                                         zlev4, rho4, ustar, pblh, wstar, ol, 0.1f0)
     push!(dz_gpu, delz2)
 end
 m1, m2 = mean(dz_cpu), mean(dz_gpu); s1, s2 = std(dz_cpu), std(dz_gpu)
@@ -75,7 +109,7 @@ zs = Float32[]
 for i in 1:5000
     z, _, _, _, _, _, _ = EASLEE.Operators.turbulence_hanna_4d(2.0f0, 1.5f0, 1.5f0, 900.0f0, 0.0f0, 5.0f0, 0.0f0,
                                                      1.0f0, Int32(NK), UInt64(12345 * i + 7),
-                                                     zlev4, rho4, grad4, ustar, pblh, wstar, ol, 0.1f0)
+                                                     zlev4, rho4, ustar, pblh, wstar, ol, 0.1f0)
     push!(zs, z)
 end
 check("never below the ground or above the model top",
@@ -88,7 +122,7 @@ function spread(u, h, l)
     for i in 1:4000
         _, d, _, _, _, _, _ = EASLEE.Operators.turbulence_hanna_4d(4.0f0, 1.5f0, 1.5f0, 300.0f0, 0.0f0, 5.0f0, 0.0f0,
                                                          1.0f0, Int32(NK), UInt64(777 * i + 3),
-                                                         zlev4, rho4, grad4, u, h, w, l, 0.1f0)
+                                                         zlev4, rho4, u, h, w, l, 0.1f0)
         push!(v, d)
     end
     std(v)

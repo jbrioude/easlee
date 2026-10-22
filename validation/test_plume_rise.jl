@@ -52,7 +52,9 @@ lonc = 0.5 * (r.lon[1] + r.lon[2]); latc = 0.5 * (r.lat[1] + r.lat[2])
 indy_c, indx_c = Op.latlontoindyindx(nest.gridconfig, latc, lonc)
 ix = round(Int, indx_c); iy = round(Int, indy_c); it = clamp(round(Int, Float64(indt)), 1, 2)
 z3 = nest.metfields3D.zlev; th = nest.metfields3D.theta
-zcol = Float64[z3[ix, iy, k, it] for k in 1:Nk]
+# θ is a full-level field: pair it with the full-level heights, as the engine's
+# _compute_plume_layer does (layout contract 2026-10-22; was zlev[k] with θ[k])
+zcol = Op._full_level_heights(z3, ix, iy, it)
 zagl = zcol .- zcol[1]
 θcol = Float64[th[ix, iy, k, it] for k in 1:Nk]
 pblh = Float64(nest.metfields2D.pblh[ix, iy, it])

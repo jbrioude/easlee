@@ -1,7 +1,7 @@
 # test_surface_layer.jl — Monin-Obukhov surface-layer wind factor
 # (physics/surface_layer.jl).  The archived wind is a SLAB below the lowest
-# model level; this puts a parcel back on the similarity profile anchored at
-# that level.  Pinned properties: exact log law in neutral conditions, correct
+# full level (indl 1.5, layout contract); this puts a parcel back on the
+# similarity profile anchored at that level.  Pinned properties: exact log law in neutral conditions, correct
 # stability ordering, no correction above the anchor, and hard safety limits.
 
 const REPO = abspath(joinpath(@__DIR__, ".."))
@@ -18,7 +18,10 @@ function check(name, ok; info = "")
 end
 
 κ  = 0.4f0
-z1 = 19.6f0        # ETEX archive median lowest-level height
+z1 = 19.6f0        # anchor height.  19.6 m is the ETEX atlas zlev[2], the anchor
+                   # before the 2026-10-22 layout contract; the advance now anchors
+                   # at the lowest full level, ½·zlev[2] (~10 m on ERA5 L137).  The
+                   # factor depends only on (z, z1, u*, L, U1), so the checks hold.
 U1 = 8.0f0
 us = 0.35f0        # u* consistent with that wind over land
 

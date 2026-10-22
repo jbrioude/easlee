@@ -4,6 +4,8 @@
 #   [1] surface-flux unit detector (_sfcflux_is_accumulated / _sfcflux_divisor /
 #       _sfcflux_convention!): per-second vs accumulated values give the same W/m²,
 #       header period honoured, 3600 s fallback, #info override, once-per-run cache;
+#       the windowed-accumulation decision (_flux_window_mode!) and no second
+#       division of window-converted fields (2026-10-22);
 #   [2] WRF time-slice matcher (_wrf_time_slice): loops over the TIME dimension,
 #       errors naming the file/date/span when no slice matches;
 #   [3] first-call met bracket (_first_met_bracket): clamped at both archive
@@ -89,6 +91,46 @@ Logging.with_logger(Logging.NullLogger()) do
     check("all-zero flux slot: neutral divisors, NOT cached", div == (1.0f0, 1.0f0) && !haskey(mc, "sfcflux_div"))
     div = _sfcflux_convention!(mc, mk2D(sshf_j, tau_a), 1, true, true)
     check("…and the next file with data decides", div == (3600.0f0, 3600.0f0); info="$div")
+
+    # 2026-10-22: fields already converted from their GRIB window (raw MARS/CDS
+    # stepRange s0-e) must not be divided again, even under sfcflux_units = accum
+    mc = Dict{Any,Any}("sfcflux_accum" => true, "sfcflux_step_s" => 3600,
+                       "flux_window_converted" => ["sshf", "ewss", "nsss"])
+    div = _sfcflux_convention!(mc, mk2D(sshf_w, tau_n), 1, true, true)
+    check("accum declared, fields window-converted → divisors (1, 1)", div == (1.0f0, 1.0f0); info="$div")
+
+    # one decision per met source for the windowed stepType=accum fields
+    cn = Dict("sshf" => "sshf", "ewss" => "ewss", "nsss" => "nsss", "avg_ishf" => "shf", "prate" => "prate")
+    function wscan(kinds)
+        sc = GribScan(String[])
+        for (n, k) in kinds; sc.acckind[n] = k; sc.acc2d[n] = (8, 9, 3600, 202201141800); end
+        return sc
+    end
+    todo3 = [(n, (8, 9, 3600, 202201141800)) for n in ("sshf", "ewss", "nsss")]
+    sc3 = wscan(["sshf" => "accum", "ewss" => "accum", "nsss" => "accum"])
+    mc = Dict{Any,Any}("sfcflux_accum" => nothing)
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(sshf_j, tau_a), 1, Ni)
+    check("windowed accum, J/m² magnitudes → follow the header, cached", m == "header" && get(mc, "flux_window", "") == "header")
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(sshf_w, tau_n), 1, Ni)
+    check("…the cached decision holds for later files", m == "header")
+    mc = Dict{Any,Any}("sfcflux_accum" => nothing)
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(sshf_w, tau_n), 1, Ni)
+    check("windowed accum header over W/m² values → rates, cached", m == "rate" && get(mc, "flux_window", "") == "rate")
+    mc = Dict{Any,Any}("sfcflux_accum" => nothing)
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(zeros(Float32, Ni, Nj), zeros(Float32, Ni, Nj)), 1, Ni)
+    check("all-zero windowed fields → header, NOT cached", m == "header" && !haskey(mc, "flux_window"))
+    mc = Dict{Any,Any}("sfcflux_accum" => false)
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(sshf_j, tau_a), 1, Ni)
+    check("sfcflux_units = per-s wins over J/m² magnitudes", m == "rate")
+    mc = Dict{Any,Any}("sfcflux_accum" => true)
+    m = _flux_window_mode!(mc, todo3, sc3, cn, mk2D(sshf_w, tau_n), 1, Ni)
+    check("sfcflux_units = accum wins over W/m² magnitudes", m == "header")
+    # GFS: only stepType=avg windows (W/m² bucket means) — no magnitude evidence
+    sca = wscan(["avg_ishf" => "avg", "prate" => "avg"])
+    f2 = Dict{String,Any}("shf" => reshape(copy(sshf_w), Ni, Nj, 1), "prate" => zeros(Float32, Ni, Nj, 1))
+    mc = Dict{Any,Any}("sfcflux_accum" => nothing)
+    m = _flux_window_mode!(mc, [("avg_ishf", (0, 6, 3600, 0)), ("prate", (0, 6, 3600, 0))], sca, cn, f2, 1, Ni)
+    check("avg-only windows (GFS) → header, NOT cached", m == "header" && !haskey(mc, "flux_window"))
 end
 
 println("="^78); println("[2] WRF time-slice matcher"); println("="^78)

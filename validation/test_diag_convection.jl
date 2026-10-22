@@ -39,9 +39,11 @@ cmax, idxm = findmax([isfinite(cape[i,j]) ? cape[i,j] : -1.0f0
 ci, cj = Tuple(idxm) .+ 1
 @printf("max CAPE = %.0f J/kg at i=%d j=%d  (cin = %.0f)\n", cmax, ci, cj, m2["cin"][ci,cj,1])
 
+# Stacked layout: zlev on the half levels, rho on the full levels — the layer
+# [zprof[k], zprof[k+1]] (indl ∈ [k, k+1)) holds full level k+1, air mass rho[k+1]·Δz.
 zprof   = [m3["zlev"][ci,cj,k,1] for k in 1:nz]
 rhoprof = [m3["rho"][ci,cj,k,1]  for k in 1:nz]
-layerm  = [0.5f0*(rhoprof[k]+rhoprof[k+1])*(zprof[k+1]-zprof[k]) for k in 1:nz-1]
+layerm  = [rhoprof[k+1]*(zprof[k+1]-zprof[k]) for k in 1:nz-1]
 cm      = cumsum(layerm); cmn = cm ./ cm[end]
 
 N = 50_000

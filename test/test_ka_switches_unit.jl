@@ -1,7 +1,8 @@
 # test_ka_switches_unit.jl — 2026-09-22.  Function-level checks for the five switches
 # ported to the KA advance (mesoscale, kh_ft, horizontal_tke, horizontal_hanna, MO).
 #   [1] _std16_4d is BITWISE the CPU _std16 (same arithmetic on the same array)
-#   [2] _mesoscale_sigmas_4d == _mesoscale_sigmas on random fields and at the edges
+#   [2] _mesoscale_sigmas_4d == _mesoscale_sigmas on random fields and at the edges,
+#       u/v on their full levels and levdot on its half levels (layout contract)
 #   [3] mo_wind_factor, hanna_h, tke_partition_h are pure and finite over the
 #       parameter ranges the kernel will feed them (no NaN, no negative sigma)
 using Printf, Random
@@ -38,6 +39,15 @@ for (xi, yi, zi) in ((3.7f0, 4.2f0, 5.9f0), (0.5f0, 0.5f0, 0.5f0), (11.9f0, 8.9f
     global ok &= (s1 == s2)
 end
 check("identical, including clamped positions off the grid", ok)
+# layout contract 2026-10-22: u, v are class F — the levels bracketing indl are
+# the stacked ones (k, k+1 for indl in [k-½, k+½)); levdot is class H (trunc(indl))
+okF = true
+for (zi, kF, kH) in ((2.2f0, 2, 2), (2.7f0, 3, 2), (1.2f0, 1, 1), (1.6f0, 2, 1))
+    s1 = O._mesoscale_sigmas(u, v, w, 3.7f0, 4.2f0, zi, 20)
+    global okF &= s1[1] == O._std16(u, 3, 4, kF) && s1[2] == O._std16(v, 3, 4, kF) &&
+                  s1[3] == O._std16(w, 3, 4, kH)
+end
+check("u, v sampled on the full levels bracketing indl, levdot on the half levels", okF)
 
 println("\n[3] the helpers are finite and sane over the kernel's input ranges")
 bad = 0; n = 0

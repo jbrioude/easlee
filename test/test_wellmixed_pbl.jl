@@ -8,12 +8,19 @@
 # mode of a hard σ_w discontinuity at h.  Also reports the PBL↔FT exchange
 # fraction (must be finite — closed-box bouncing would give 0 — but modest).
 #
+# Layout contract 2026-10-22: the synthetic column is given as the met holds it —
+# zlev on the half levels, rho class F (slot 1 = surface, slot k at
+# zf(k) = ½(zlev[k-1] + zlev[k])) — and the ρ / ∂ρ/∂z profiles the turbulence
+# reads are built by the production half-level builders (met/interp.jl).  Until
+# then rho was given co-located with zlev (rho[k] at height[k]).
+#
 # Usage:  julia --threads=8 --project=../easlee test_wellmixed_pbl.jl
 
 using Printf, Statistics, Random
 include("../easlee/EASLEE.jl")
 using .EASLEE
-using .EASLEE.Operators: turbulence_hanna_v1, hanna_wstar, interpolation1Dsingleirreg
+using .EASLEE.Operators: turbulence_hanna_v1, hanna_wstar, interpolation1Dsingleirreg,
+                         full_to_half_levels!, half_level_gradient!
 using .EASLEE.Types: Hanna
 
 const NZ   = 81                 # 50 m spacing, 0–4000 m
@@ -22,12 +29,16 @@ const N    = 100_000
 const DT   = 900.0f0
 const NSTP = 96                 # 24 h
 
-height  = Float32.(range(0, ZTOP, length=NZ))
-rho     = 1.2f0 .* exp.(-height ./ 8500.0f0)
-rhograd = -rho ./ 8500.0f0
+height  = Float32.(range(0, ZTOP, length=NZ))                 # zlev (half levels)
+rho_of(z) = 1.2f0 * exp(-z / 8500.0f0)
+zf      = Float32[k == 1 ? height[1] : 0.5f0 * (height[k-1] + height[k]) for k in 1:NZ]
+rhoF    = rho_of.(zf)                                         # class F, as archived
+rhograd = half_level_gradient!(similar(rhoF), rhoF, height, NZ)
+rho     = full_to_half_levels!(copy(rhoF), NZ)               # ρ at the half levels
 
-# Uniform-in-air-mass sampling over the column
-layerm = [0.5f0*(rho[k]+rho[k+1]) * (height[k+1]-height[k]) for k in 1:NZ-1]
+# Uniform-in-air-mass sampling over the column (analytic density)
+rhoz   = rho_of.(height)
+layerm = [0.5f0*(rhoz[k]+rhoz[k+1]) * (height[k+1]-height[k]) for k in 1:NZ-1]
 cm = cumsum(layerm); cm ./= cm[end]
 
 function run_case(name, ustar, pblh, ol)

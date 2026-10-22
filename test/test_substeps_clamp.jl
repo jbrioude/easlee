@@ -5,7 +5,11 @@
 #       aliased the next time slot's surface under @inbounds).
 #   A2  the CTL sub-step loop runs EXACTLY ctl sub-steps (the Float32
 #       `while inc_time < Δt` accumulator ran ctl+1 for ~20 % of (Δt, ctl)).
-#   A3  the Monin-Obukhov guard `indl < 2` is equivalent to `z_sl < z1_sl`.
+#   A3  the Monin-Obukhov guard `indl < MO_ANCHOR_INDL` (1.5, the lowest full
+#       level under the 2026-10-22 layout contract; was 2) is equivalent to
+#       `z_sl < z1_sl`, the anchor sits at ½(zlev[1]+zlev[2]), and below it the
+#       wind read is the slot-2 (anchor) wind.
+#   contract: a level index crossing nests is carried through height.
 #   A5  the grid deposit skips culled parcels (status 0x00, Dtime == now).
 # Synthetic data only — no met archive needed.
 
@@ -183,8 +187,9 @@ check("4Dlevsingle @ k = nz exactly: still == top level",
       isapprox(OP.interpolation4Dlevsingle(f4s, x, y, Float32(NZT), 1.0f0), Float32(NZT); atol = 1e-4))
 
 # ═════════════════════════════════════════════════════════════════════════════
-println("[A3] Monin-Obukhov guard: indl < 2  ⇔  z_sl < z1_sl")
+println("[A3] Monin-Obukhov guard: indl < MO_ANCHOR_INDL  ⇔  z_sl < z1_sl")
 # ═════════════════════════════════════════════════════════════════════════════
+check("MO anchor is the lowest full level, indl = 1.5 (layout contract)", OP.MO_ANCHOR_INDL == 1.5f0)
 zlev = Array{Float32,4}(undef, NX, NX, NZT, 2)
 for k in 1:NZT
     zlev[:, :, k, 1] .= Float32(20.0 * (k - 1)^1.3)          # monotone, irregular
@@ -196,12 +201,68 @@ nmismatch = 0; ntested = 0
 for t in (1.0f0, 1.4f0, 2.0f0), xi in (1.0f0, 2.3f0, 4.9f0), yj in (1.5f0, 3.8f0),
     indl in Float32[1.0, 1.001, 1.5, 1.999, 2.0, 2.001, 2.5, 3.0, 4.7, NZT - 0.5, NZT - 1e-3]
     z_sl  = OP.interpolation4Dlevsingle(zlev, xi, yj, indl, t)
-    z1_sl = OP.interpolation4Dlevsingle(zlev, xi, yj, 2.0f0, t)
+    z1_sl = OP.interpolation4Dlevsingle(zlev, xi, yj, OP.MO_ANCHOR_INDL, t)
     global ntested += 1
-    (isfinite(z_sl) && z_sl < z1_sl) == (indl < 2.0f0) || (global nmismatch += 1)
+    (isfinite(z_sl) && z_sl < z1_sl) == (indl < OP.MO_ANCHOR_INDL) || (global nmismatch += 1)
 end
 println("      $ntested (t, x, y, indl) combinations, $nmismatch mismatches")
-check("guard `indl < 2` ⇔ former `z_sl < z1_sl` on every tested position", nmismatch == 0)
+check("guard `indl < MO_ANCHOR_INDL` ⇔ `z_sl < z1_sl` on every tested position", nmismatch == 0)
+# the anchor height is the lowest full level's, ½(zlev[1] + zlev[2]) — not zlev[2]
+let worst = 0.0f0
+    for t in (1.0f0, 1.4f0), xi in (1.0f0, 2.3f0), yj in (1.5f0, 3.8f0)
+        z1  = OP.interpolation4Dlevsingle(zlev, xi, yj, OP.MO_ANCHOR_INDL, t)
+        zf2 = 0.5f0 * (OP.interpolation4Dlevsingle(zlev, xi, yj, 1.0f0, t) +
+                       OP.interpolation4Dlevsingle(zlev, xi, yj, 2.0f0, t))
+        worst = max(worst, abs(z1 - zf2))
+    end
+    check("MO anchor height == ½(zlev[1] + zlev[2])", worst < 1f-4, info = "worst |Δ| $worst m")
+end
+# below the anchor the class-F wind blends slot 1 and slot 2, equal by the
+# contract: what the advance rescales IS the anchor (slot-2) wind
+let Uc = Array{Float32,4}(undef, NX, NX, NZT, 2), worst = 0.0f0
+    for k in 1:NZT, i in 1:NX, j in 1:NX, l in 1:2
+        Uc[i, j, k, l] = Float32(3 + 0.4i - 0.2j + 1.5k + 0.7l)
+    end
+    Uc[:, :, 1, :] .= Uc[:, :, 2, :]                   # surface slot = lowest full level
+    for t in (1.0f0, 1.6f0), xi in (1.2f0, 3.7f0), yj in (2.1f0, 4.4f0), indl in (1.0f0, 1.2f0, 1.49f0)
+        worst = max(worst, abs(OP.interpolation4Dsingle(Uc, xi, yj, indl, t) -
+                               OP.interpolation4Dsingle(Uc, xi, yj, OP.MO_ANCHOR_INDL, t)))
+    end
+    check("wind below the anchor == anchor (slot-2) wind", worst < 1f-5, info = "worst |Δ| $worst m/s")
+    # and above the anchor it is a blend of full levels 2 and 3 — not rescaled
+    u2 = OP.interpolation4Dsingle(Uc, 2.0f0, 2.0f0, 2.0f0, 1.0f0)
+    check("indl = 2 reads halfway between full levels 2 and 3",
+          isapprox(u2, 0.5f0 * (Uc[2, 2, 2, 1] + Uc[2, 2, 3, 1]); atol = 1f-5), info = "got $u2")
+end
+
+# ═════════════════════════════════════════════════════════════════════════════
+println("[contract] nest escape: the level index is carried through height")
+# ═════════════════════════════════════════════════════════════════════════════
+# inner nest: 30 m layers; outer nest: 100 m layers.  A parcel at indl = 4.5 of
+# the inner nest is at 105 m AGL → indl = 2.05 in the outer nest (the old clamp
+# kept 4.5, i.e. 350 m).
+let zin = Array{Float32,4}(undef, NX, NX, NZT, 2), zout = Array{Float32,4}(undef, NX, NX, NZT, 2)
+    for k in 1:NZT
+        zin[:, :, k, :]  .= Float32(30 * (k - 1))
+        zout[:, :, k, :] .= Float32(100 * (k - 1))
+    end
+    LCe  = EASLEE.Types.SigmaPressureLevel(Int32(NZT), zeros(Float32, NZT), zeros(Float32, NZT))
+    srcn = (metfields3D = (zlev = zin,),  levelconfig = LCe)
+    tgtn = (metfields3D = (zlev = zout,), levelconfig = LCe)
+    # the parcel has just left the inner grid (indx > Ni): its column is clamped
+    il = OP._indl_across_nests(srcn, tgtn, Float32(NX) + 0.3f0, 3.0f0, 4.5f0, 2.5f0, 2.5f0, 1.3f0, 1.7f0)
+    check("inner indl 4.5 (105 m) → outer indl 2.05", isapprox(il, 2.05f0; atol = 1f-4), info = "got $il")
+    zback = OP.interpolation4Dlevsingle(zout, 2.5f0, 2.5f0, il, 1.7f0)
+    check("height above ground conserved across the nests", isapprox(zback, 105.0f0; atol = 1f-2),
+          info = "got $zback m")
+    il_top = OP._indl_across_nests(srcn, tgtn, 3.0f0, 3.0f0, Float32(NZT) - 0.01f0, 2.5f0, 2.5f0, 1.0f0, 1.0f0)
+    check("result stays inside the outer nest's level range", 1.0f0 <= il_top <= Float32(NZT - 1),
+          info = "got $il_top")
+    zn = copy(zin); zn[:, :, :, :] .= NaN32
+    il_nan = OP._indl_across_nests((metfields3D = (zlev = zn,), levelconfig = LCe), tgtn,
+                                   3.0f0, 3.0f0, 3.2f0, 2.5f0, 2.5f0, 1.0f0, 1.0f0)
+    check("masked source column keeps indl (clamped)", il_nan == 3.2f0, info = "got $il_nan")
+end
 
 # ═════════════════════════════════════════════════════════════════════════════
 println("[A5] grid deposit skips culled parcels (status 0x00, Dtime == now)")

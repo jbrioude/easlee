@@ -73,7 +73,8 @@ function place_parcels!(rngseed)
         f = (th_t - thp[k-1]) / max(thp[k] - thp[k-1], 1.0f-3)
         state.status[i] = 0x01; state.nest[i] = 1; state.is_new[i] = false
         state.indx[i] = ix; state.indy[i] = iy
-        state.indl[i] = clamp(Float32(k - 1) + f, 2.0f0, Float32(nz - 1))
+        # θ is a full-level field: slot k sits at indl k − ½ (layout contract)
+        state.indl[i] = clamp(Float32(k) - 1.5f0 + f, 2.0f0, Float32(nz - 1))
         state.mass[i] = 1.0f0
         state.Dtime[i] = rc.startdate
     end
@@ -85,7 +86,7 @@ function grid_theta(i, date)
     n  = Int(state.nest[i])
     th = rt.metfields3D[n]["theta"]
     indt = EASLEE.MetAdapter.met_time_index_array(date, ctx.nests)[n]
-    EASLEE.Operators.interpolation4Dlevsingle(th, state.indx[i], state.indy[i],
+    EASLEE.Operators.interpolation4Dsingle(th, state.indx[i], state.indy[i],   # class F: stacked
         clamp(state.indl[i], 1.0f0, Float32(nz - 1)), indt)
 end
 function clear_parcels!()
@@ -201,15 +202,15 @@ for q in 0:NSTRAT-1
     f = (pp[k-1] - tgt) / max(pp[k-1] - pp[k], 1.0f0)
     state.status[i] = 0x01; state.nest[i] = 1; state.is_new[i] = false
     state.indx[i] = ix; state.indy[i] = iy
-    state.indl[i] = clamp(Float32(k - 1) + f, 2.0f0, Float32(nz - 1))
+    state.indl[i] = clamp(Float32(k) - 1.5f0 + f, 2.0f0, Float32(nz - 1))   # puv: class F
     state.mass[i] = 1.0f0; state.Dtime[i] = rc.startdate
 end
 sigma_of(i) = begin
     n = Int(state.nest[i]); pv = rt.metfields3D[n]["puv"]
-    k = clamp(floor(Int, state.indl[i]), 1, nz - 1)
-    ii = clamp(round(Int, state.indx[i]), 1, size(pv, 1))
-    jj = clamp(round(Int, state.indy[i]), 1, size(pv, 2))
-    (pv[ii, jj, k, 1] + (state.indl[i] - k) * (pv[ii, jj, k+1, 1] - pv[ii, jj, k, 1])) / pv[ii, jj, 1, 1]
+    ii = clamp(round(Int, state.indx[i]), 1, size(pv, 1) - 1)
+    jj = clamp(round(Int, state.indy[i]), 1, size(pv, 2) - 1)
+    EASLEE.Operators.interpolation4Dsingle(pv, Float32(ii), Float32(jj),
+        clamp(state.indl[i], 1.0f0, Float32(nz - 1)), 1.0f0) / pv[ii, jj, 1, 1]
 end
 edges = range(0.05, 0.5, length=10)
 h0 = [count(i -> edges[b] <= sigma_of(i) < edges[b+1], alive()) for b in 1:9]

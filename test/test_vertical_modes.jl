@@ -32,17 +32,19 @@ function check(name, ok; info="")
 end
 
 # ── synthetic stratospheric column ───────────────────────────────────────────
-# 40 levels, z = (k−1)·500 m (0–19.5 km … extend: use 60 levels to 29.5 km),
-# θ(k) linear in z above the tropopause: θ = 380 + 35·(z−16 km)/1 km above 16 km,
-# and p from a scale-height profile so σ = p/ps puts the strat at w = 1.
+# 60 levels on the stacked layout contract: half levels zlev[k] = (k−1)·500 m
+# (0–29.5 km, class H); the full-level fields θ, p, T, ρ (class F) hold the
+# surface in slot 1 and full level k at z_f = (k−1.5)·500 m in slot k ≥ 2.
+# T isothermal 200 K above 16 km, p from a scale-height profile so σ = p/ps
+# puts the strat at w = 1.
 const NZ = 60
 dims = (6, 6, NZ, 2)
 zlev  = zeros(Float32, dims); theta = zeros(Float32, dims)
 puv   = zeros(Float32, dims); Tarr  = zeros(Float32, dims)
 rho   = zeros(Float32, dims)
 for k in 1:NZ
-    z = (k - 1) * 500.0
-    zlev[:, :, k, :]  .= Float32(z)
+    zlev[:, :, k, :]  .= Float32((k - 1) * 500.0)
+    z = k == 1 ? 0.0 : (k - 1.5) * 500.0
     p = 101325.0 * exp(-z / 7000.0)
     puv[:, :, k, :]   .= Float32(p)
     T = z < 16000.0 ? 288.0 - 0.0065 * z : 200.0
@@ -62,11 +64,9 @@ RC = (currentdate = DateTime(2025, 5, 22, 12), direction = Int8(1))
 fctx = (nests = [(metfields3D = m3, levelconfig = LC, gridconfig = GC)],
         runconfig = RC)
 
-# θ at a continuous index (mirror of the module's interpolation)
-θat(indl) = begin
-    k0 = clamp(floor(Int, indl), 1, NZ - 1)
-    theta[3, 3, k0, 1] + (indl - k0) * (theta[3, 3, k0+1, 1] - theta[3, 3, k0, 1])
-end
+# θ at a continuous index: the contract's stacked read of a class-F field
+# (updated 2026-10-22 from the co-located θ[k]-at-indl-k mirror)
+θat(indl) = EASLEE.Operators.interpolation4Dsingle(theta, 3.0f0, 3.0f0, Float32(indl), 1.0f0)
 
 function mkhyb(; diabatic=true)
     HybridVert(Union{IsentropicFields,Nothing}[IsentropicFields{typeof(tt1)}(tt1, nothing)],
@@ -122,7 +122,7 @@ check("θ_p follows the exact θ̇ integral over one day",
       info=@sprintf("θ_p %.3f vs %.3f K", hyb2.theta_p[1], θp_exp))
 check("parcel indl sits on the θ_p ladder position",
       isapprox(θat(st2.indl[1]), hyb2.theta_p[1]; rtol=2e-4))
-# dθ/dz here = 35·(500/1000)/500 m ... compute directly from the ladder:
+# dθ/dz from the ladder: adjacent full levels are 500 m apart
 dθdz = (theta[3,3,54,1] - theta[3,3,53,1]) / 500.0
 dz_day = (hyb2.theta_p[1] - θp_init) / dθdz
 check("implied descent ≈ (θ/T)·Q/(dθ/dz) (km/day scale sane)",

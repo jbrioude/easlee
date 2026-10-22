@@ -2,6 +2,7 @@
 # for the same ECMWF parameter 77:
 #   raw MARS / ERA5 dissemination : eta-dot            [s^-1]     ~1e-6
 #   flex_extract (calc_etadot)    : eta-dot * dp/deta  [Pa s^-1]   ~1e-1
+# and on different levels (full for raw MARS, half for flex_extract: pinned at the end).
 # They differ by dp/deta ~ 1e5, so the conversion to a level-index rate must
 # pick the right divisor.  This pins the detector and both branches.
 
@@ -173,6 +174,31 @@ end
 # The bounds bracket the documented ERA5 range (mean 1.9 cm/s, peaks 0.36 m/s).
 check("bounds bracket the documented ERA5 peak",
       _LEVDOT_W_LO < 0.36 < _LEVDOT_W_HI)
+
+# ── Levels the archived eta-dot sits on (2026-10-22) ────────────────────────
+# flex_extract: half levels, level 137 = the ground (rms ratio 137/136 = 0.05);
+# raw MARS: full levels (0.32) — validation/check_etadot_levels.py.
+let m = match(r"const _ETADOT_HALF_RATIO = ([0-9.]+)", src)
+    m === nothing && error("_ETADOT_HALF_RATIO not found in initialize.jl")
+    eval(Meta.parse("const _ETADOT_HALF_RATIO = $(m.captures[1])"))
+end
+eval(Meta.parse(extract("_etadot_levels!")))
+function etacol(r)          # slot 1 = r × slot 2, random sign pattern
+    a = Float32.(randn(6, 5, 4, 1)); a[:, :, 1, 1] .= r .* a[:, :, 2, 1]; return a
+end
+mc = Dict{String,Any}("etadot_levels" => "auto")
+check("rms ratio 0.05 (flex_extract) → half levels", _etadot_levels!(mc, etacol(0.05f0), 1) == "half")
+check("…cached once per met source", get(mc, "_etadot_levels_auto", "") == "half" &&
+      _etadot_levels!(mc, etacol(0.32f0), 1) == "half")
+mc = Dict{String,Any}("etadot_levels" => "auto")
+check("rms ratio 0.32 (raw MARS) → full levels", _etadot_levels!(mc, etacol(0.32f0), 1) == "full")
+mc = Dict{String,Any}("etadot_levels" => "full")
+check("#info etadot_levels = full wins over a half-level signature", _etadot_levels!(mc, etacol(0.05f0), 1) == "full")
+mc = Dict{String,Any}("etadot_levels" => "half")
+check("#info etadot_levels = half wins over a full-level signature", _etadot_levels!(mc, etacol(0.32f0), 1) == "half")
+mc = Dict{String,Any}("etadot_levels" => "auto")
+check("all-zero eta-dot: undecided, not cached",
+      _etadot_levels!(mc, zeros(Float32, 6, 5, 4, 1), 1) == "half" && !haskey(mc, "_etadot_levels_auto"))
 
 println()
 println(npass, " passed, ", nfail, " failed")

@@ -4,15 +4,20 @@
 # stay uniform after 24 h of turbulence only — no pile-up or void at the PBL top.
 # Same column, same cases and the same tolerance as test_wellmixed_pbl.jl (CPU),
 # with the column presented as 4-D met arrays and the per-parcel xorshift RNG.
+# Layout contract 2026-10-22: rho4 is class F (slot 1 = surface, slot k at
+# zf(k) = ½(zlev[k-1] + zlev[k])), as the readers store it; the kernel forms ρ and
+# ∂ρ/∂z at the half levels itself (no drhodz array).  Until then rho4 was
+# co-located with zlev and a precomputed gradient array was passed.
 using Printf, Statistics, Random
 include("../easlee/EASLEE.jl"); using .EASLEE
 using .EASLEE.Operators: turbulence_hanna_4d, hanna_wstar, interpolation4D_irregzsingle, interpolation4Dlevsingle
 const NZ = 81; const ZTOP = 4000.0f0; const N = 100_000; const DT = 900.0f0; const NSTP = 96
 height  = Float32.(range(0, ZTOP, length=NZ))
-rho     = 1.2f0 .* exp.(-height ./ 8500.0f0)
-rhograd = -rho ./ 8500.0f0
+rho     = 1.2f0 .* exp.(-height ./ 8500.0f0)                 # analytic, at the half levels
+zf      = Float32[k == 1 ? height[1] : 0.5f0 * (height[k-1] + height[k]) for k in 1:NZ]
+rhoF    = 1.2f0 .* exp.(-zf ./ 8500.0f0)                     # class F, as archived
 mk4(v) = (a = Array{Float32,4}(undef, 2, 2, NZ, 2); for i in 1:2, j in 1:2, k in 1:NZ, t in 1:2; a[i,j,k,t] = v[k]; end; a)
-zlev4, rho4, grad4 = mk4(height), mk4(rho), mk4(rhograd)
+zlev4, rho4 = mk4(height), mk4(rhoF)
 layerm = [0.5f0*(rho[k]+rho[k+1]) * (height[k+1]-height[k]) for k in 1:NZ-1]
 cm = cumsum(layerm); cm ./= cm[end]
 function run_case(name, ustar, pblh, ol)
@@ -30,7 +35,7 @@ function run_case(name, ustar, pblh, ol)
         w = wp[p]; ldt = 10.0f0; st = UInt64(0x9E3779B97F4A7C15) * UInt64(p) + UInt64(11)
         for s in 1:NSTP
             zp, _, w, ldt, _, _, st = turbulence_hanna_4d(indl, 1.5f0, 1.5f0, DT, ldt, 5.0f0, w,
-                                                          1.0f0, Int32(NZ), st, zlev4, rho4, grad4,
+                                                          1.0f0, Int32(NZ), st, zlev4, rho4,
                                                           ustar, pblh, wstar, ol, 0.1f0)
             indl = interpolation4D_irregzsingle(zlev4, 1.5f0, 1.5f0, zp, 1.0f0, Int32(1), Int32(NZ))
             z[p] = zp
