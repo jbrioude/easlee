@@ -295,6 +295,117 @@ function get_vertical_profile(field::Array{Float32,4}, indx, indy, indt, nz::Int
     return get_vertical_profile!(buf, field, indx, indy, indt, Int(nz))
 end
 
+# ── Class-F fields at the half levels (layout contract, 2026-10-22) ───────────
+# zlev[k] is half level k (zlev[1] = ground); slot k of a class-F field (theta,
+# rho, ...) is the full level between zlev[k-1] and zlev[k], at
+# zf(k) = ½(zlev[k-1] + zlev[k]), and slot 1 holds the surface value.  A consumer
+# that pairs heights zlev[k] with a profile (the turbulence) needs the class-F
+# field AT the half levels:
+#     f_h(1) = f[1] (ground)   f_h(k) = ½(f[k] + f[k+1]), 1 < k < Nk   f_h(Nk) = f[Nk]
+#     ∂f/∂z_h(k) = (f[k+1] − f[k]) / (zf(k+1) − zf(k)),  zf(1) = zlev[1],  ∂f/∂z_h(Nk) = ∂f/∂z_h(Nk−1)
+# The two stencils below are shared by the CPU profile builders and the 4-D
+# (GPU-safe) samplers, so both paths see the same numbers.
+@inline _half_value(fk, fkp1, k::Int, nk::Int) =
+    (k <= 1 || k >= nk) ? fk : 0.5f0 * (fk + fkp1)
+
+@inline function _half_gradient(fk, fkp1, zkm1, zk, zkp1, k::Int)
+    zf_k  = k <= 1 ? zk : 0.5f0 * (zkm1 + zk)
+    zf_k1 = 0.5f0 * (zk + zkp1)
+    return (fkp1 - fk) / max(zf_k1 - zf_k, 1.0f-3)
+end
+
+# In place: a class-F column → its values at the half levels.  Forward sweep is
+# safe: buf[k+1] is still the full-level value when buf[k] is formed.
+@inline function full_to_half_levels!(buf::AbstractVector, nz::Int)
+    @inbounds for k in 2:(nz - 1)
+        buf[k] = _half_value(buf[k], buf[k + 1], k, nz)
+    end
+    return buf
+end
+
+# ∂f/∂z at the half levels of a class-F column `f` (still on its full levels),
+# with `z` the zlev column (half levels).
+@inline function half_level_gradient!(grad::AbstractVector, f::AbstractVector,
+                                      z::AbstractVector, nz::Int)
+    @inbounds for k in 1:(nz - 1)
+        grad[k] = _half_gradient(f[k], f[k + 1], z[max(k - 1, 1)], z[k], z[k + 1], k)
+    end
+    @inbounds grad[nz] = grad[nz - 1]
+    return grad
+end
+
+# Nearest-column class-F profile at the half levels (theta for the turbulence).
+@inline function get_vertical_profile_half!(buf::AbstractVector,
+                                            field::AbstractArray{<:AbstractFloat,4},
+                                            indx, indy, indt, nz::Int)
+    get_vertical_profile_nearest!(buf, field, indx, indy, indt, nz)
+    return full_to_half_levels!(buf, nz)
+end
+
+# Nearest-column ρ and ∂ρ/∂z at the half levels, `height` = the zlev column
+# (the Langevin drift's ρ⁻¹∂ρ/∂z term; replaces the readers' drhodz, which
+# differences class-F ρ over half-level heights).
+@inline function get_density_profiles_half!(rhobuf::AbstractVector, gradbuf::AbstractVector,
+                                            rho::AbstractArray{<:AbstractFloat,4},
+                                            height::AbstractVector,
+                                            indx, indy, indt, nz::Int)
+    get_vertical_profile_nearest!(rhobuf, rho, indx, indy, indt, nz)
+    half_level_gradient!(gradbuf, rhobuf, height, nz)
+    full_to_half_levels!(rhobuf, nz)
+    return rhobuf, gradbuf
+end
+
+# 4-D (GPU-safe) twins.  _level_read is the bilinear-in-space, linear-in-time
+# value at the integer level k (8 reads; never touches k+1).
+@inline function _level_read(field, di::Float32, dj::Float32, dl::Float32,
+                             i::Int, j::Int, k::Int, l::Int)
+    @inbounds begin
+        v1 = (1.0f0-di)*(1.0f0-dj)*field[i,j,k,l]   + (1.0f0-di)*dj*field[i,j+1,k,l] +
+             di*(1.0f0-dj)*field[i+1,j,k,l]         + di*dj*field[i+1,j+1,k,l]
+        v2 = (1.0f0-di)*(1.0f0-dj)*field[i,j,k,l+1] + (1.0f0-di)*dj*field[i,j+1,k,l+1] +
+             di*(1.0f0-dj)*field[i+1,j,k,l+1]       + di*dj*field[i+1,j+1,k,l+1]
+    end
+    return (1.0f0 - dl) * v1 + dl * v2
+end
+
+# Class-F field at the integer half level k (= the CPU profile's element k).
+@inline function half_level_value_4d(field, x, y, k::Int, t)
+    nk = size(field, 3)
+    dl, l = _split_t(t)
+    di = Float32(mod(x, 1)); dj = Float32(mod(y, 1))
+    i = Base.unsafe_trunc(Int, x); j = Base.unsafe_trunc(Int, y)
+    fk   = _level_read(field, di, dj, dl, i, j, k, l)
+    fkp1 = _level_read(field, di, dj, dl, i, j, min(k + 1, nk), l)
+    return _half_value(fk, fkp1, k, nk)
+end
+
+# ρ and ∂ρ/∂z at the fractional level index z: linear in z between the half-level
+# values at trunc(z) and trunc(z)+1 — what interpolation1Dsingle does on the CPU
+# profiles built by get_density_profiles_half!.
+@inline function half_level_density_4d(rho, zlev, x, y, z, t)
+    nk = size(rho, 3)
+    dl, l = _split_t(t)
+    di = Float32(mod(x, 1)); dj = Float32(mod(y, 1))
+    i = Base.unsafe_trunc(Int, x); j = Base.unsafe_trunc(Int, y)
+    dk = Float32(mod(z, 1)); k = Base.unsafe_trunc(Int, z)
+    if k >= nk - 1            # top layer / exactly-integral top query
+        dk = k >= nk ? 1.0f0 : dk
+        k  = nk - 1
+    end
+    r0 = _level_read(rho,  di, dj, dl, i, j, k, l)
+    r1 = _level_read(rho,  di, dj, dl, i, j, k + 1, l)
+    r2 = _level_read(rho,  di, dj, dl, i, j, min(k + 2, nk), l)
+    zm = _level_read(zlev, di, dj, dl, i, j, max(k - 1, 1), l)
+    z0 = _level_read(zlev, di, dj, dl, i, j, k, l)
+    z1 = _level_read(zlev, di, dj, dl, i, j, k + 1, l)
+    z2 = _level_read(zlev, di, dj, dl, i, j, min(k + 2, nk), l)
+    rh0 = _half_value(r0, r1, k, nk)
+    rh1 = _half_value(r1, r2, k + 1, nk)
+    g0  = _half_gradient(r0, r1, zm, z0, z1, k)
+    g1  = k + 1 < nk ? _half_gradient(r1, r2, z0, z1, z2, k + 1) : g0
+    return (1.0f0 - dk) * rh0 + dk * rh1, (1.0f0 - dk) * g0 + dk * g1
+end
+
 # ── Irregular-z functions ─────────────────────────────────────────────────────
 
 function interpolation4D_irregzsingle(field, indx, indy, z, indt, Nkmin, Nkmax)

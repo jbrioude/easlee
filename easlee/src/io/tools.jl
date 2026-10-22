@@ -94,6 +94,7 @@ struct Lambert
    Uedge::Bool
    Vedge::Bool
    Wedge::Bool
+   geoout::Bool   # output grid geographic (true) or native metres (false)
 end
 struct Mercator   # MesoNH conformal projection with RPK = 0
    Ni::Int32
@@ -249,15 +250,27 @@ end
     
     return profile
 end
+# Stacked read of a full-level (class F) field at level index z — the same map
+# as src/met/interp.jl (_split_t, _split_z_stagger, _clamp_top_k): index z + ½
+# for z ≥ 1.5, 2z − 1 below (indl = 1 → the surface slot 1, 1.5 → slot 2), and
+# the top stencil shifted down so the k+1 point stays in bounds.  Until
+# 2026-10-22 this Main-scope copy kept the old near-surface map 2z + ½ (slots 2–3
+# at the ground) and no top clamp; Main-scope callers (test_freeze_diag,
+# test_sectional_ice, where it shadows the imported module function) now get
+# the engine's read.
 function interpolation4Dsingle(field,x,y,z,t)
-   if t == 2. 
-     dl::Float32 = 1.
-     l::Int = 1
+   if t >= 2f0
+     dl = 1.0f0; l = 1
    else
-     dl = mod(t,1)
-     l = Base.unsafe_trunc(Int,t)
+     dl = Float32(mod(t,1)); l = Base.unsafe_trunc(Int,t)
    end
-   return z .>=1.5f0 ? interpolate4D(field , mod(x,1), mod(y,1), mod(z+0.5f0,1),dl, Base.unsafe_trunc(Int,x), Base.unsafe_trunc(Int,y), Base.unsafe_trunc(Int,z+0.5f0), l) : interpolate4D(field , mod(x,1), mod(y,1), mod(2z+0.5f0,1), dl, Base.unsafe_trunc(Int,x), Base.unsafe_trunc(Int,y), Base.unsafe_trunc(Int,2z+0.5f0),  l)
+   zz = z >= 1.5f0 ? Float32(z) + 0.5f0 : max(1.0f0, 2f0 * Float32(z) - 1.0f0)
+   dz = Float32(mod(zz,1)); kk = Base.unsafe_trunc(Int,zz)
+   if kk >= size(field,3)
+     dz = 1.0f0; kk = size(field,3) - 1
+   end
+   return interpolate4D(field, Float32(mod(x,1)), Float32(mod(y,1)), dz, dl,
+                        Base.unsafe_trunc(Int,x), Base.unsafe_trunc(Int,y), kk, l)
 end
 
 function indytolat(gridconfig::Rectilinear,indy)
@@ -269,12 +282,7 @@ end
 function dytodindy(gridconfig::Rectilinear,dy,indx,indy)
    return dy*gridconfig.dyconst
 end
-function dxtodindx(gridconfig::Lambert,dx,indx,indy)
-   return dx/gridconfig.dx
-end
-function dytodindy(gridconfig::Lambert,dy,indx,indy)
-   return dy/gridconfig.dy
-end
+# (Lambert dx→index conversions live in met/coords.jl, with the map factor)
 function lontoindx(gridconfig::Rectilinear,lon)
  # wrap into [lonmin, lonmin+360): a −180..180 release/receptor lon must land
  # on a 0–360-convention met crop (CAPTEX: lonmin=260, release −84.05 → 275.95);
@@ -397,7 +405,6 @@ end
 # Met-grid index → output-grid coordinate (scalar; the canonical versions live
 # in src/met/coords.jl inside the EASLEE module).
 @inline indxtoxout(gridconfig::Rectilinear,indx,indy) = indx*gridconfig.coeffx + gridconfig.offsetx
-@inline indxtoxout(gridconfig::Lambert,indx,indy) = indx*gridconfig.coeffx + gridconfig.offsetx
 @inline indytoyout(gridconfig::Rectilinear,indx,indy) = indy*gridconfig.coeffy + gridconfig.offsety
-@inline indytoyout(gridconfig::Lambert,indx,indy) = indy*gridconfig.coeffy + gridconfig.offsety
+# (Lambert output mapping: met/coords.jl, through lon/lat for a geographic grid)
 @inline test_z(z,outheight)::Int = findfirst((x) -> x >= z,outheight)

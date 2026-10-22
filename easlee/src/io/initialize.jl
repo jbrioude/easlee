@@ -90,6 +90,19 @@ function netcdfinfo_WRF(filename)
    info["proj_rebydx"] = proj_rebydx
    info["proj_lat1"] = proj_lat1
    info["proj_rebydx"] = proj_rebydx
+   # Vertical-coordinate coefficients and map factors, for the time-averaged
+   # mass-coupled fluxes (listvariables/WRFv2_avgflx.vars, #info wrf_winds =
+   # avgflx).  Column mass at a level = c1·(MU + MUB) + c2 (hybrid coordinate,
+   # HYBRID_OPT = 2; c1 = 1, c2 = 0 on the terrain-following eta of older WRF).
+   nkm = Int(info["Nk"]) - 1
+   rd1(name, n, dflt) = haskey(v.vars, name) ? Float32.(v.vars[name][:, 1]) : fill(Float32(dflt), n)
+   info["wrf_c1h"] = rd1("C1H", nkm, 1); info["wrf_c2h"] = rd1("C2H", nkm, 0)
+   info["wrf_c1f"] = rd1("C1F", nkm + 1, 1); info["wrf_c2f"] = rd1("C2F", nkm + 1, 0)
+   haskey(v.vars, "ZNU") && (info["wrf_znu"] = Float32.(v.vars["ZNU"][:, 1]))
+   haskey(v.vars, "ZNW") && (info["wrf_znw"] = Float32.(v.vars["ZNW"][:, 1]))
+   for name in ("MAPFAC_UY", "MAPFAC_VX", "MAPFAC_MY")
+      haskey(v.vars, name) && (info["wrf_" * lowercase(name)] = Float32.(v.vars[name][:, :, 1]))
+   end
    return info 
 end
 function netcdfinfo_AROME(filename)
@@ -101,11 +114,18 @@ function netcdfinfo_AROME(filename)
 #akbk from AROME
    info["ak"] = v.vars["Ak"]
    info["bk"] = v.vars["Bk"]
-   # Grid sizes are hardcoded for this AROME domain (the files lack the
-   # WRF-style dimension attributes).  Nk = file levels + 1 because of NH_dW.
-   info["Ni"] = 220
-   info["Nj"] = 190
-   info["Nk"] = 91
+   # Grid sizes from the file's dimensions (X, Y, level); Nk = file levels + 1
+   # (the surface slot).  Until 2026-10-22 they were hard-coded to the La
+   # Réunion domain (220 × 190 × 90 levels): any other domain was read with the
+   # wrong dimensions.
+   for d in ("X", "Y", "level")
+      haskey(v.dim, d) || error("AROME NetCDF $filename: no '$d' dimension (has $(join(keys(v.dim), ", ")))")
+   end
+   info["Ni"] = v.dim["X"].dimlen
+   info["Nj"] = v.dim["Y"].dimlen
+   info["Nk"] = v.dim["level"].dimlen + 1
+   length(v.vars["Ak"]) == v.dim["level"].dimlen ||
+      error("AROME NetCDF $filename: $(length(v.vars["Ak"])) Ak coefficients for $(v.dim["level"].dimlen) levels")
    # AROME files carry no stagger attributes (cf. the WRF branch): U/V live on
    # mass points, W on level edges.
    info["Uedge"] = false
@@ -198,13 +218,87 @@ end
 function netcdfgetdims(filename,input_vars_3D,input_vars_2D)
    dims = Dict()
    v = NetCDF.open(filename)
+   # names absent from the file (optional fields, empty "derive me" entries)
+   # are skipped: size(v[name]) used to throw on them
    for name in input_vars_3D
-     dims[name] = size(v[name])[1:3]
+     haskey(v.vars, name) && (dims[name] = size(v[name])[1:3])
    end
    for name in input_vars_2D
-     dims[name] = size(v[name])[1:2]
+     haskey(v.vars, name) && (dims[name] = size(v[name])[1:2])
    end
    return dims
+end
+
+# ── Where each mapped 3-D NetCDF field sits (2026-10-22) ──────────────────────
+# The transport reads u, v, T, p, … at the mass points on the FULL levels and
+# zlev, levdot, tke on the HALF levels (stacked layout).  A file can hold a
+# quantity at either position — WRF: U on the x-faces or a post-processed U at
+# the mass points, W on the w-levels or on the mass levels, TKE_PBL on the
+# w-levels or a scheme's TKE on the mass levels — so the position is read from
+# the file's own metadata (WRF `stagger` X/Y/Z and *_stag dimensions, MesoNH
+# `grid` 1 mass / 2 u / 3 v / 4 w and level_w), then from the sizes (Ni+1, Nj+1
+# faces; Nk entries = the half levels on WRF), checked against what each EASLEE
+# field accepts, logged, and used by the readers (metconfig["field_pos"]).
+struct FieldPos
+   input::String
+   x::Symbol           # :mass | :face
+   y::Symbol           # :mass | :face
+   z::Symbol           # :full | :half
+   dims::String
+end
+
+const _FIELD_ACCEPTS = Dict(            # EASLEE field → accepted (x, y, z) positions
+   "Ux"     => ((:mass, :face), (:mass,), (:full,)),
+   "Vy"     => ((:mass,), (:mass, :face), (:full,)),
+   "W"      => ((:mass,), (:mass,), (:half, :full)),
+   "levdot" => ((:mass,), (:mass,), (:half, :full)),
+   "tke"    => ((:mass,), (:mass,), (:half, :full)),
+   "ph"     => ((:mass,), (:mass,), (:half,)),
+   "phb"    => ((:mass,), (:mass,), (:half,)))
+# readers that handle only one position of a field (no face winds on AROME and
+# MERRA-2; AROME averages its mass-level TKE, MERRA-2 its mid-layer OMEGA)
+const _FIELD_ACCEPTS_MODEL = Dict(
+   ("AROME", "Ux") => ((:mass,), (:mass,), (:full,)), ("AROME", "Vy") => ((:mass,), (:mass,), (:full,)),
+   ("AROME", "tke") => ((:mass,), (:mass,), (:full,)),
+   ("MERRA2", "Ux") => ((:mass,), (:mass,), (:full,)), ("MERRA2", "Vy") => ((:mass,), (:mass,), (:full,)),
+   ("MERRA2", "levdot") => ((:mass,), (:mass,), (:full,)))
+_field_accepts(e, model) = get(_FIELD_ACCEPTS_MODEL, (model, e),
+                               get(_FIELD_ACCEPTS, e, ((:mass,), (:mass,), (:full,))))   # T, p, θ, q, …
+
+function _netcdf_field_positions(filename, model, input_vars_3D, convertnameinput, Ni, Nj, Nk)
+   v = NetCDF.open(filename)
+   pos = Dict{String,FieldPos}()
+   for name in input_vars_3D
+      haskey(v.vars, name) || continue
+      var = v.vars[name]; ndims(var) >= 3 || continue
+      dn = [String(d.name) for d in var.dim]; dl = [Int(d.dimlen) for d in var.dim]
+      stag = haskey(var.atts, "stagger") ? strip(string(var.atts["stagger"])) : ""
+      grid = haskey(var.atts, "grid") ? Int(var.atts["grid"]) : 0
+      x = (stag == "X" || grid == 2 || occursin("_stag", dn[1]) || dl[1] == Ni + 1) ? :face : :mass
+      y = (stag == "Y" || grid == 3 || occursin("_stag", dn[2]) || dl[2] == Nj + 1) ? :face : :mass
+      z = (stag == "Z" || grid == 4 || occursin("_stag", dn[3]) || dn[3] == "level_w" ||
+           (model == "WRF" && dl[3] == Nk)) ? :half : :full
+      e = String(get(convertnameinput, name, name))
+      pos[e] = FieldPos(name, x, y, z, join(dn[1:3], " × "))
+   end
+   # check against what each field accepts, then one table in the log
+   lines = String[]
+   for e in sort(collect(keys(pos)))
+      p = pos[e]; ax, ay, az = _field_accepts(e, model)
+      (p.x in ax && p.y in ay && p.z in az) ||
+         error("met field '$e' ← '$(p.input)' [$(p.dims)] is on $(p.x) x, $(p.y) y, $(p.z) levels; " *
+               "$e accepts x ∈ $(ax), y ∈ $(ay), levels ∈ $(az) ($(basename(filename)))")
+      hx = p.x == :face && p.y == :face ? "x- and y-faces → averaged to the mass points" :
+           p.x == :face ? "x-faces → averaged to the mass points" :
+           p.y == :face ? "y-faces → averaged to the mass points" : "mass points"
+      hy = ""
+      hz = p.z == :half ? (e in ("W", "levdot", "tke", "ph", "phb") ? "half levels (as is)" : "half levels") :
+           e in ("W", "levdot", "tke") ? "full levels → averaged to the half levels" :
+           e == "zlev" ? "full-level heights → half levels at their midpoints" : "full levels"
+      push!(lines, "  $(rpad(e, 7)) ← $(rpad(p.input, 12)) [$(p.dims)]: " * join(filter(!isempty, [hx, hy, hz]), "; "))
+   end
+   @info "met field positions ($model, $(basename(filename))):\n" * join(lines, "\n")
+   return pos
 end
 """
     gridcheck_onefile!(directory, input) -> metconfig::Dict
@@ -267,6 +361,13 @@ function gridcheck_onefile!(directory,input)
    metconfig["etadot_per_second"] =
        metconfig["etadot_units"] == "s-1"  ? true  :
        metconfig["etadot_units"] == "pa/s" ? false : nothing
+   # Levels the archived eta-dot sits on (2026-10-22): full | half | auto (from
+   # the lowest-level magnitude, once per met source — see _etadot_levels!).
+   metconfig["etadot_levels"] =
+       lowercase(strip(string(get(input, "etadot_levels", "auto"))))
+   metconfig["etadot_levels"] in ("auto", "full", "half") ||
+       error("listvariables #info etadot_levels must be auto | full | half, got " *
+             "\"$(metconfig["etadot_levels"])\"")
 
    # ── Unit convention of the archived surface fluxes (sshf, ewss/nsss) ──────
    # review 2026-09-04 A3 (item 1): the GRIB header (stepType=accum, units
@@ -274,7 +375,10 @@ function gridcheck_onefile!(directory,input)
    # VALUES to per-second and keeps the accumulated header, raw MARS keeps both
    # accumulated.  Declared per dataset with `#info sfcflux_units`
    # (auto | per-s | accum); "auto" decides ONCE per met source from the field
-   # magnitude (see _sfcflux_convention!), like etadot_units above.
+   # magnitude (see _sfcflux_convention!), like etadot_units above.  Since
+   # 2026-10-22 it also governs every 2-D stepType=accum field whose header gives
+   # a window (AROME-HDF, raw MARS/CDS, IFS forecasts): accum → converted from
+   # the window, per-s → taken as rates (_flux_window_mode!).
    metconfig["sfcflux_units"] =
        lowercase(strip(string(get(input, "sfcflux_units", "auto"))))
    metconfig["sfcflux_units"] in ("auto", "per-s", "accum") ||
@@ -283,6 +387,19 @@ function gridcheck_onefile!(directory,input)
    metconfig["sfcflux_accum"] =
        metconfig["sfcflux_units"] == "accum" ? true  :
        metconfig["sfcflux_units"] == "per-s" ? false : nothing
+
+   # ── Sign convention of the archived sensible heat flux sshf ──────────────
+   # ECMWF (IFS, ERA5, flex_extract) archives sshf POSITIVE DOWNWARD: daytime
+   # heating of the air is negative (measured: -236 W/m2 at noon over the Sahara
+   # in /data/ECMWF/ERA5/EAg/2020/EAg20061512).  The Obukhov length below needs
+   # H positive UPWARD, so the hybrid-GRIB derivation flips it unless the
+   # namelist says otherwise (#info sshf_positive = down | up; default down,
+   # the only convention of the datasets that reach metgribfieldcalculation!).
+   metconfig["sshf_positive"] =
+       lowercase(strip(string(get(input, "sshf_positive", "down"))))
+   metconfig["sshf_positive"] in ("down", "up") ||
+       error("listvariables #info sshf_positive must be down | up, got " *
+             "\"$(metconfig["sshf_positive"])\"")
 
    # ── Optional namelist #info keys (multi-source support) ───────────────────
    # companions: filename-pattern substitutions for datasets that split fields
@@ -310,6 +427,16 @@ function gridcheck_onefile!(directory,input)
    end
    metconfig["pressure_companion"] = pc
    metconfig["vcoord"]     = lowercase(strip(get(input, "leveltype", "hybrid")))
+   # wrf_winds: "instant" (U, V, W of the output time) or "avgflx" (WRF's
+   # time-averaged mass-coupled fluxes AVGFLX_RUM/RVM/WWM, namelist output_avgflx)
+   # vertical_velocity: for datasets that archive none (AROME-HDF) —
+   # "continuity" (diagnosed from the horizontal mass divergence) or "none"
+   metconfig["vertical_velocity"] = lowercase(strip(get(input, "vertical_velocity", "continuity")))
+   metconfig["vertical_velocity"] in ("continuity", "none") ||
+       error("listvariables #info vertical_velocity must be continuity | none, got \"$(metconfig["vertical_velocity"])\"")
+   metconfig["wrf_winds"]  = lowercase(strip(get(input, "wrf_winds", "instant")))
+   metconfig["wrf_winds"] in ("instant", "avgflx") ||
+       error("listvariables #info wrf_winds must be instant | avgflx, got \"$(metconfig["wrf_winds"])\"")
    metconfig["multistep"]  = lowercase(strip(get(input, "multistep", "false"))) == "true"
    if metconfig["metfileformat"] == "GRIB"
      message = GribFile(filename)
@@ -393,6 +520,9 @@ function gridcheck_onefile!(directory,input)
        info = netcdfinfo_MESONH(filename)
        metconfig = merge(metconfig,info)
      end
+     # position of every mapped 3-D field, checked and logged (FieldPos above)
+     metconfig["field_pos"] = _netcdf_field_positions(filename, modeltype, input_vars_3D, convertnameinput,
+                                                      Int(metconfig["Ni"]), Int(metconfig["Nj"]), Int(metconfig["Nk"]))
    end
    metconfig["convertnameeaslee"] = convertnameeaslee
    metconfig["convertnameinput"] = convertnameinput
@@ -667,10 +797,17 @@ function initgridconfig(metconfig,outputconfig,nest)
      local dyout::Float32 = outputconfig["dlat"]
      local xoutshift::Float32 = outputconfig[n]["xoutshift"]
      local youtshift::Float32 = outputconfig[n]["youtshift"]
+     # xout = indx·coeffx + offsetx must be the exact fractional output cell:
+     # (lon − lon0)/dxout + 1, cell ii spanning [ii, ii+1) like the NetCDF writer.
+     # With lon(indx) = lon1 + (indx−1)·dlon that is offsetx = (lon1 − lon0)/dxout
+     # + 1 − coeffx.  The "+ 1 − coeffx" was missing until 2026-10-13: deposits
+     # were off by (coeffx − 1) output cells in x and y whenever the output and
+     # met spacings differ (ETEX: 0.1° output on 0.25° ERA5 → +1.5 cells, i.e.
+     # 0.15° east and north; CAPTEX 0.25°/0.25° exact).
      local coeffx::Float32 = dx/dxout
-     local offsetx::Float32 = xoutshift/dxout
+     local offsetx::Float32 = xoutshift/dxout + 1.0f0 - coeffx
      local coeffy::Float32 = dy/dyout
-     local offsety::Float32 = youtshift/dyout
+     local offsety::Float32 = youtshift/dyout + 1.0f0 - coeffy
      local Uedge::Bool = false
      local Vedge::Bool = false
      local Wedge::Bool = true
@@ -709,15 +846,25 @@ function initgridconfig(metconfig,outputconfig,nest)
      local proj_polei::Float32 = metconfig["proj_polei"]
      local proj_polej::Float32 = metconfig["proj_polej"]
      local proj_rebydx::Float32 = metconfig["proj_rebydx"]
-     local coeffx2::Float32 = dx2/dxout2
-     local offsetx2::Float32 = xoutshift2/dxout2
-     local coeffy2::Float32 = dy2/dyout2
-     local offsety2::Float32 = youtshift2/dyout2
+     # [output.grid].crs (2026-10-13; parsed but ignored before, and every
+     # Lambert output grid was treated as projection metres — with the degrees
+     # the WRF configurations give, DX/dxout ≈ 6e5 and nothing was deposited):
+     #  "lonlat" (default): lon0/lat0/dx/dy in degrees, each parcel mapped
+     #     through its lon/lat — coeffx = 1/dxout [1/deg], offsetx = lon0 [deg];
+     #  "native": projection metres from the first mass point, linear map
+     #     xout = indx·coeffx + offsetx with the exact offset 1 − coeffx − x0/dxout.
+     local geoout2::Bool = get(outputconfig, "crs", "lonlat") != "native"
+     local coeffx2::Float32 = geoout2 ? 1.0f0 / dxout2 : dx2 / dxout2
+     local offsetx2::Float32 = geoout2 ? Float32(outputconfig["lon0"]) :
+                               1.0f0 - dx2 / dxout2 - Float32(outputconfig["lon0"]) / dxout2
+     local coeffy2::Float32 = geoout2 ? 1.0f0 / dyout2 : dy2 / dyout2
+     local offsety2::Float32 = geoout2 ? Float32(outputconfig["lat0"]) :
+                               1.0f0 - dy2 / dyout2 - Float32(outputconfig["lat0"]) / dyout2
      local Uedge2::Bool = false
      local Vedge2::Bool = false
      local Wedge2::Bool = true
  
-     gridconfig = Lambert( Ni2, Nj2, Nk2, dx2,dy2,proj_stdlon,proj_truelat1,proj_truelat2,proj_hemi,proj_cone,proj_polei,proj_polej,proj_rebydx,coeffx2, offsetx2, coeffy2, offsety2, Uedge2, Vedge2, Wedge2)
+     gridconfig = Lambert( Ni2, Nj2, Nk2, dx2,dy2,proj_stdlon,proj_truelat1,proj_truelat2,proj_hemi,proj_cone,proj_polei,proj_polej,proj_rebydx,coeffx2, offsetx2, coeffy2, offsety2, Uedge2, Vedge2, Wedge2, geoout2)
    end
    return gridconfig
 end
@@ -815,10 +962,15 @@ function initarrays(metconfig,gridconfig,levelconfig)
    # assertions; turbulence_v3(::Hanna,...) ignores them entirely, so zeros
    # are safe.  For Thomson runs they are filled correctly by the field-calc
    # routines before advance is called.
-   _Ni = size(first(values(metfields3D)), 1)
-   _Nj = size(first(values(metfields3D)), 2)
+   # Size from a MASS-point field: on WRF the first Dict entry can be the
+   # x-staggered U (Ni+1) — Dict order is arbitrary.
+   _ref = haskey(metfields3D, "T") ? metfields3D["T"] : first(values(metfields3D))
+   _Ni = size(_ref, 1)
+   _Nj = size(_ref, 2)
    _Nk = Nk
-   for name in ("drhodz", "dsigwdz", "tke", "tls", "theta")
+   # puv: pressure, derived by the WRF reader (2026-10-13: WRF.vars/WRFv2.vars do
+   # not list it, so MetFields3D got a zero array — reported by Yue Huang)
+   for name in ("drhodz", "dsigwdz", "tke", "tls", "theta", "puv", "rho")
        if !haskey(metfields3D, name)
            metfields3D[name] = zeros(Float32, _Ni, _Nj, _Nk, 2)
        end
@@ -828,7 +980,7 @@ function initarrays(metconfig,gridconfig,levelconfig)
    # the array reference even when the variables file doesn't list them.
    # metgribfieldcalculation! will fill them from derived quantities (stress,
    # heat flux) if they are not directly loaded from the GRIB.
-   for name in ("ustar", "pblh", "wstar", "ol")
+   for name in ("ustar", "pblh", "wstar", "ol", "shf")
        if !haskey(metfields2D, name)
            metfields2D[name] = zeros(Float32, _Ni, _Nj, 2)
        end
@@ -850,7 +1002,10 @@ function _reset_derived_surface!(metfields2D, indt)
     # height in a run is built from the surface pressure of the FIRST file ever
     # loaded into the slot, and d(ps)/dt is identically zero.  Datasets that
     # archive sp reload it from the file, so zeroing first is safe there too.
-    for name in ("ustar", "pblh", "wstar", "ol", "sp")
+    # (2026-10-22) also the surface fluxes: a message absent from a file (AROME-HDF
+    # SP3 has no step 0) left the slot of two files earlier — for AROME-HDF already
+    # sign-flipped, so flipped again.  Zero = absent: the derivations fall back.
+    for name in ("ustar", "pblh", "wstar", "ol", "sp", "shf", "sshf", "tauu", "tauv", "ewss", "nsss")
         haskey(metfields2D, name) || continue
         a = metfields2D[name]
         a isa AbstractArray || continue
@@ -889,9 +1044,12 @@ function _load_met_file!(fname, indt, target_date::DateTime, metfileformat, mode
       metaromehdffieldcalculation!(globalx, metconfig, metfields3D, metfields2D, indt)
    elseif model == "MESONH"
       metmesonhfieldcalculation!(globalx, metconfig, metfields3D, metfields2D, indt)
-   else
-      checkmetfields!(metconfig, metfields3D, metfields2D, indt)
-   end
+   elseif model == "WRF"
+      metwrffieldcalculation!(globalx, metconfig, metfields3D, metfields2D, indt)
+   elseif metfileformat == "NETCDF"
+      error("NetCDF meteorology: no reader for model \"$model\" " *
+            "(WRF, AROME, MERRA2, MESONH are supported)")
+   end   # hybrid-level GRIB (ERA5/IFS): metgribfieldcalculation! above
    return nothing
 end
 
@@ -1018,10 +1176,42 @@ end
 struct GribScan
    hits::Dict{String,Threads.Atomic{Int}}   # 3-D input shortName → levels stored
    flux_step_s::Threads.Atomic{Int}         # endStep−startStep of sshf [s]; −1 = unseen
+   # 2-D duplicates (2026-10-13).  A 2-D shortName can come in several messages:
+   # GFS carries prate as a 3/6-h average AND an instantaneous value, cape/cin at
+   # the surface AND over three pressure layers.  Every match used to be stored,
+   # so the last message decoded won — and with several decode workers which one
+   # that was changed from run to run.  Now the best message by _grib2d_score is
+   # kept, decided and stored under `lk`.
+   prio2d::Dict{String,Int}                 # 2-D shortName → score of the stored message
+   chosen2d::Dict{String,String}            # 2-D shortName → its typeOfLevel/stepType/level
+   ndup2d::Dict{String,Int}                 # 2-D shortName → messages seen
+   lk::ReentrantLock
+   # accumulated 2-D fields (2026-10-21): shortName → (startStep, endStep, step
+   # unit [s], run = dataDate·10⁴ + dataTime) of the stored message, and the file
+   # it came from (cur_file, set before each file of the main/companion loop)
+   acc2d::Dict{String,NTuple{4,Int}}
+   accsrc::Dict{String,String}
+   acckind::Dict{String,String}            # "accum" | "avg"
+   cur_file::Base.RefValue{String}
 end
 GribScan(input_vars_3D) = GribScan(
    Dict{String,Threads.Atomic{Int}}(String(n) => Threads.Atomic{Int}(0) for n in input_vars_3D),
-   Threads.Atomic{Int}(-1))
+   Threads.Atomic{Int}(-1), Dict{String,Int}(), Dict{String,String}(), Dict{String,Int}(),
+   ReentrantLock(), Dict{String,NTuple{4,Int}}(), Dict{String,String}(), Dict{String,String}(), Ref(""))
+
+# Preference among 2-D messages sharing a shortName: a surface (or near-surface)
+# field over a layer field; an interval mean over an accumulation over an
+# instantaneous value (the mean represents the interval the flux and
+# precipitation fields of the same file describe); then the lowest level.
+function _grib2d_score(msg)
+   tol = String(msg["typeOfLevel"])
+   lv  = tol == "surface" ? 4 : tol == "heightAboveGround" ? 3 :
+         tol in ("meanSea", "atmosphere", "entireAtmosphere") ? 2 : 1
+   st  = try String(msg["stepType"]) catch; "instant" end
+   sv  = st == "avg" ? 3 : st == "accum" ? 2 : st == "instant" ? 1 : 0
+   lev = try Int(msg["level"]) catch; 0 end
+   return lv * 100_000 + sv * 10_000 - clamp(lev, 0, 9_999)
+end
 
 # A message set that is incomplete (companion file absent, truncated file, level
 # subset) leaves the PREVIOUS file's data in the rotated slot silently.  The
@@ -1040,9 +1230,29 @@ function _check_grib_completeness!(metconfig, scan::GribScan, filename, convertn
       end
       if first
          n > 0 && (ref[name] = n)
+         # a RENAMED field (input name ≠ EASLEE name) that matched nothing is a
+         # wrong shortName or level type, not a derived placeholder like rho = rho
+         # (2026-10-13).  shortNames depend on the eccodes version: GRIB.jl's
+         # bundled eccodes calls GFS cloud cover tcdc (what GFS.vars maps),
+         # eccodes ≥ 2.4x tcc — after such an upgrade the field would read zero
+         # with no message but this one.
+         # (not with a pressure companion — AROME-HDF IP1 fields such as gz = z are
+         # read by the stitch AFTER this check, without the scan)
+         n == 0 && name != ename && get(metconfig, "pressure_companion", nothing) === nothing &&
+            @warn "GRIB read: mapped 3-D field not found in the file — check its shortName / typeOfLevel in the variables file" file=basename(filename) var=name easlee=ename
          0 < n < expected && @warn "GRIB read: 3-D field has fewer levels than the ladder" file=basename(filename) var=name easlee=ename levels_found=n levels_expected=expected
       elseif haskey(ref, name) && n != ref[name]
          @warn "GRIB read: incomplete 3-D field — slot keeps the PREVIOUS file's levels" file=basename(filename) var=name easlee=ename levels_found=n levels_expected=ref[name]
+      end
+   end
+   if first
+      for (name, n) in scan.ndup2d
+         n > 1 && @info "GRIB read: 2-D field '$name' comes in $n messages; kept $(scan.chosen2d[name]) (typeOfLevel/stepType/level)" file=basename(filename)
+      end
+      for name in metconfig["input_vars_2D"]
+         ename = string(get(convertname, name, name))
+         haskey(scan.ndup2d, name) || name == ename ||
+            @info "GRIB read: 2-D field '$name' ($ename) not in the file — derived or left at zero" file=basename(filename)
       end
    end
    # accumulation period of the surface fluxes (item 1), recorded once per run
@@ -1075,6 +1285,7 @@ function loadgribmetfiles!(filename,indt,flipit,globalx::Bool,metconfig,metfield
    crop  = get(metconfig, "crop", nothing)     # domain crop window (_crop_metconfig!)
    flip_lat = get(metconfig, "flip_lat", true)::Bool   # review 2026-09-04 A3 (item 5)
    scan  = GribScan(input_vars_3D)                      # review 2026-09-04 A3 (item 6)
+   scan.cur_file[] = filename
    _read_grib_messages!(filename, indt, flipit, globalx, Ni, Nk,
                         convertname, input_vars_3D, input_vars_2D,
                         metfields3D, metfields2D;
@@ -1089,6 +1300,7 @@ function loadgribmetfiles!(filename,indt,flipit,globalx::Bool,metconfig,metfield
       cname = joinpath(dirname(filename), replace(basename(filename), pfrom => pto))
       println("  companion: ", basename(cname), isfile(cname) ? "" : "  (MISSING)")
       if isfile(cname)
+         scan.cur_file[] = cname
          _read_grib_messages!(cname, indt, flipit, globalx, Ni, Nk,
                               convertname, input_vars_3D, input_vars_2D,
                               metfields3D, metfields2D;
@@ -1097,6 +1309,10 @@ function loadgribmetfiles!(filename,indt,flipit,globalx::Bool,metconfig,metfield
       end
    end
    _check_grib_completeness!(metconfig, scan, filename, convertname, levelmap, Nk)
+   # Fluxes accumulated from the forecast start (AROME-HDF SP3: sshf, iews, inss
+   # with stepRange 0-N) → rates over the last step (2026-10-21; they were used as
+   # instantaneous fluxes: u* median 18-62 m/s, max 382, from forecast hour 2 on).
+   _window_to_rate!(scan, convertname, metfields2D, indt, Ni, globalx, flip_lat, crop, metconfig)
    # Pressure-level stitch (AROME-HDF IP1): read the isobaric package's u/v/t/r/z
    # onto the UPPER ladder slots n_hp+2 … Nk via an isobaric level map.  These
    # slots sit above the height block and are left untouched by the surface shift
@@ -1155,6 +1371,151 @@ function _store_grib_slice!(dst::AbstractMatrix{Float32}, vals::AbstractMatrix{F
    return nothing
 end
 
+# GRIB step unit → seconds (codes: 0 min, 1 h, 2 day, 10 3 h, 11 6 h, 12 12 h, 13 s)
+function _grib_step_seconds(m)
+   su = try Int(m["stepUnits"]) catch; 1 end
+   return su == 0 ? 60 : su == 2 ? 86400 : su == 10 ? 10800 : su == 11 ? 21600 :
+          su == 12 ? 43200 : su == 13 ? 1 : 3600
+end
+
+# Accumulated or averaged 2-D fields over a window [s0, e] → the mean RATE over
+# the last archived step (2026-10-22; generalises the AROME-HDF fix of 10-21):
+#   integral I(e) = value (accum) or value·(e − s0) (avg)
+#   rate = (I(e) − I(e')) / (e − e'),  e' the latest step of the SAME run, field
+#   and window start s0 with s0 < e' < e, found in the same file or in a file of
+#   the same name pattern (digits replaced) in the same directory;
+#   without such a step: I(e)/(e − s0) — the mean over the whole window (exact
+#   for a one-step window, and unchanged for an avg field).
+# Covers AROME-HDF SP3 (accum 0-N), GFS (avg 0-3, 0-6, 6-9, 6-12 buckets: the 6-h
+# buckets were used as the value at the valid time), CDS 1-h accumulations, ERA5
+# avg_* (one-step windows, unchanged); flex_extract values (stepRange 0) are skipped.
+_name_pattern(f) = replace(f, r"\d+" => "#")
+_digit_groups(f) = [parse(Int, m.match) for m in eachmatch(r"\d+", f)]
+
+# Fields whose magnitude tells an accumulation from a per-second value (the
+# thresholds of _sfcflux_convention!): heat flux and surface stress.
+_flux_ref_threshold(ename) =
+   ename in ("sshf", "shf") ? _SFCFLUX_SSHF_THRESHOLD :
+   ename in ("ewss", "nsss", "tauu", "tauv") ? _SFCFLUX_TAU_THRESHOLD : nothing
+
+# Are the stepType=accum fields with a window accumulations over it, as the GRIB
+# header says ("header"), or rates written by a preprocessor under the original
+# header ("rate")?  Decided ONCE per met source — the files of one directory and
+# name pattern follow one convention — and cached in metconfig["flux_window"]:
+# `#info sfcflux_units = accum` → "header", `per-s` → "rate"; `auto` → from the
+# heat-flux / stress fields of the first file that carries them accumulated over
+# a window: a value above the threshold cannot be per-second → "header"; all
+# below → "rate", warned.  A file without such fields follows the header and
+# does not fix the decision.  stepType=avg fields are rates whatever the answer
+# (only their window is converted).
+function _flux_window_mode!(metconfig, todo, scan, convertname, metfields2D, indt, Ni)
+   m = get(metconfig, "flux_window", nothing)
+   m === nothing || return m::String
+   evid = Tuple{String,Float32,Float32}[]                        # (field, max |value|, threshold)
+   for (name, _) in todo
+      scan.acckind[name] == "accum" || continue
+      thr = _flux_ref_threshold(convertname[name])
+      thr === nothing && continue
+      a = view(metfields2D[convertname[name]], 1:Ni, :, indt)
+      push!(evid, (name, maximum(x -> isfinite(x) ? abs(x) : 0.0f0, a; init = 0.0f0), thr))
+   end
+   decisive = !isempty(evid) && any(e -> e[2] != 0, evid)
+   acc  = any(e -> e[2] > e[3], evid)
+   desc = join(["$(e[1]) max |x| = $(e[2]) (accumulated above $(e[3]))" for e in evid], ", ")
+   forced = get(metconfig, "sfcflux_accum", nothing)              # #info sfcflux_units
+   if forced !== nothing
+      m = forced::Bool ? "header" : "rate"
+      @info "flux windows: #info sfcflux_units = $(metconfig["sfcflux_units"]) → accumulated fields $(m == "header" ? "converted from their GRIB window to rates over the last step" : "taken as per-second values, GRIB windows ignored")"
+      decisive && acc != (m == "header") &&
+         @warn "flux windows: #info sfcflux_units = $(metconfig["sfcflux_units"]) contradicts the field magnitudes ($desc) — the declaration is applied"
+      metconfig["flux_window"] = m
+      return m
+   end
+   decisive || return "header"
+   m = acc ? "header" : "rate"
+   if m == "header"
+      @info "flux windows: accumulated values, as the GRIB header says ($desc) — converted to rates over the last step; decided once for this met source"
+   else
+      @warn "flux windows: the GRIB header declares accumulations but the values have per-second magnitudes ($desc) — taken as rates, windows ignored; decided once for this met source.  Declare #info sfcflux_units = accum | per-s to override."
+   end
+   metconfig["flux_window"] = m
+   return m
+end
+
+function _window_to_rate!(scan, convertname, metfields2D, indt, Ni, globalx::Bool, flip_lat, crop, metconfig)
+   todo = [(name, acc) for (name, acc) in scan.acc2d
+           if acc[2] > acc[1] && haskey(scan.accsrc, name)]
+   metconfig["flux_window_converted"] = String[]
+   isempty(todo) && return nothing
+   if _flux_window_mode!(metconfig, todo, scan, convertname, metfields2D, indt, Ni) == "rate"
+      filter!(t -> scan.acckind[t[1]] == "avg", todo)
+      isempty(todo) && return nothing
+   end
+   best = Dict{String,Tuple{Int,String}}(name => (acc[1], "") for (name, acc) in todo)   # (e', file)
+   function scanfile!(c, src)
+      GribFile(c) do gf
+         for msg in gf
+            m = Message(msg)
+            nm = m["shortName"]
+            (haskey(best, nm) && scan.accsrc[nm] == src) || continue
+            (s0, e, unit, run) = scan.acc2d[nm]
+            (try String(m["stepType"]) catch; "" end) == scan.acckind[nm] || continue
+            (Int(m["dataDate"]) * 10000 + Int(m["dataTime"]) == run && Int(m["startStep"]) == s0) || continue
+            ep = Int(m["endStep"])
+            best[nm][1] < ep < e && (best[nm] = (ep, c))
+         end
+      end
+   end
+   for src in unique(scan.accsrc[name] for (name, _) in todo)
+      scanfile!(src, src)                                      # same file (multistep sets)
+      all(n -> scan.accsrc[n] != src || best[n][2] != "", first.(todo)) && continue
+      # files of the same name pattern whose first differing number is smaller,
+      # nearest first (GFS f006 → f003; AROME-HDF 07H12H → 00H06H)
+      key = _name_pattern(basename(src)); gs = _digit_groups(basename(src))
+      cands = Tuple{Int,String}[]
+      for f in readdir(dirname(src))
+         (f != basename(src) && _name_pattern(f) == key) || continue
+         g = _digit_groups(f); k = findfirst(i -> g[i] != gs[i], eachindex(g))
+         (k === nothing || g[k] > gs[k]) && continue
+         push!(cands, (g[k], joinpath(dirname(src), f)))
+      end
+      for (_, c) in sort(cands; rev=true)
+         scanfile!(c, src)
+         all(n -> scan.accsrc[n] != src || best[n][2] != "", first.(todo)) && break
+      end
+   end
+   for (name, (s0, e, unit, run)) in todo
+      dst  = view(metfields2D[convertname[name]], 1:Ni, :, indt)
+      avg  = scan.acckind[name] == "avg"
+      ep, c = best[name]
+      prev = zeros(Float32, size(dst))
+      if c != ""
+         GribFile(c) do gf
+            for msg in gf
+               m = Message(msg)
+               (m["shortName"] == name && Int(m["endStep"]) == ep && Int(m["startStep"]) == s0 &&
+                Int(m["dataDate"]) * 10000 + Int(m["dataTime"]) == run) || continue
+               hm = Bool(m["bitmapPresent"])
+               _store_grib_slice!(prev, m["values"]::Matrix{Float64}, hm,
+                                  hm ? Float64(m["missingValue"]) : NaN, flip_lat, crop)
+               break
+            end
+         end
+      elseif !avg && e - s0 > 1
+         @warn "accumulated field '$name' (steps $s0-$e): no earlier step of this run found next to $(basename(scan.accsrc[name])) — using the mean over the whole window" maxlog=3
+      end
+      if avg       # integrals in (value × steps); rate = ΔI / Δsteps
+         @. dst = (dst * Float32(e - s0) - prev * Float32(ep - s0)) / Float32(e - ep)
+      else
+         @. dst = (dst - prev) / Float32((e - ep) * unit)
+      end
+      globalx && (metfields2D[convertname[name]][Ni+1, :, indt] = metfields2D[convertname[name]][1, :, indt])
+      @info "window → rate: '$name' $(scan.acckind[name]) steps $s0-$e, previous step $ep$(c == "" ? " (none)" : " in " * basename(c))" maxlog=12
+   end
+   metconfig["flux_window_converted"] = [String(convertname[name]) for (name, _) in todo]
+   return nothing
+end
+
 function _apply_grib_message!(test, indt, flipit, globalx::Bool, Ni, Nk,
                               convertname, input_vars_3D, input_vars_2D,
                               metfields3D, metfields2D, levelmap, leveltol, target_date,
@@ -1205,11 +1566,43 @@ function _apply_grib_message!(test, indt, flipit, globalx::Bool, Ni, Nk,
       # are heightAboveGround like the 3D fields, yet legitimate 2D variables).
       (levelmap !== nothing && test["typeOfLevel"] == leveltol &&
        haskey(levelmap, Float64(test["level"]))) && return nothing
-      if flipit
-         metfields2D[convertname[name]][:,:,1] = metfields2D[convertname[name]][:,:,2]
+      if scan === nothing
+         if flipit
+            metfields2D[convertname[name]][:,:,1] = metfields2D[convertname[name]][:,:,2]
+         end
+         _store_grib_slice!(view(metfields2D[convertname[name]], 1:Ni, :, indt),
+                            msgvalues, has_mv, mv, flip_lat, crop)
+      else
+         sc = _grib2d_score(test)
+         desc = string(test["typeOfLevel"], "/", (try test["stepType"] catch; "?" end), "/", test["level"])
+         stored = lock(scan.lk) do
+            scan.ndup2d[name] = get(scan.ndup2d, name, 0) + 1
+            sc > get(scan.prio2d, name, typemin(Int)) || return false
+            scan.prio2d[name] = sc; scan.chosen2d[name] = desc
+            if flipit
+               metfields2D[convertname[name]][:,:,1] = metfields2D[convertname[name]][:,:,2]
+            end
+            _store_grib_slice!(view(metfields2D[convertname[name]], 1:Ni, :, indt),
+                               msgvalues, has_mv, mv, flip_lat, crop)
+            # wrap column inside the lock too: a concurrent better-scored message
+            # must not interleave its store with this copy
+            if globalx
+               metfields2D[convertname[name]][Ni+1,:,indt] = metfields2D[convertname[name]][1,:,indt]
+            end
+            stype = try String(test["stepType"]) catch; "" end
+            if stype in ("accum", "avg")
+               scan.acc2d[name] = (Int(test["startStep"]), Int(test["endStep"]),
+                                   _grib_step_seconds(test),
+                                   Int(test["dataDate"]) * 10000 + Int(test["dataTime"]))
+               scan.accsrc[name] = scan.cur_file[]
+               scan.acckind[name] = stype
+            else
+               delete!(scan.acc2d, name)
+            end
+            return true
+         end
+         stored || return nothing
       end
-      _store_grib_slice!(view(metfields2D[convertname[name]], 1:Ni, :, indt),
-                         msgvalues, has_mv, mv, flip_lat, crop)
       # review 2026-09-04 A3 (item 1): accumulation step of the heat-flux message
       # (endStep − startStep, in seconds); 0 on de-accumulated flex_extract files.
       if scan !== nothing && convertname[name] == "sshf"
@@ -1220,7 +1613,7 @@ function _apply_grib_message!(test, indt, flipit, globalx::Bool, Ni, Nk,
          catch
          end
       end
-      if globalx
+      if globalx && scan === nothing          # (with a scan: done under the lock above)
          metfields2D[convertname[name]][Ni+1,:,indt] = metfields2D[convertname[name]][1,:,indt]
       end
    end
@@ -1418,171 +1811,8 @@ from every reader.
 """
 @inline levrate_from_w(w, z_below, z_above) = w / ((z_above - z_below) / 2)
 
-function checkmetfields!(metconfig,metfields3D,metfields2D,indt)
-# Check that the derived 3D fields (zlev, Ux, Vy, levdot, rho) are defined;
-# if not, try to calculate them from the fields that have been loaded
-# (generic NetCDF path — mainly WRF-style inputs).
-   convertnameeaslee = metconfig["convertnameeaslee"]
-   convertname = metconfig["convertnameinput"]
-   easlee_vars_3D = metconfig["easlee_vars_3D"]
-   input_vars_3D = metconfig["input_vars_3D"]
-   easlee_vars_2D = metconfig["easlee_vars_2D"]
-   input_vars_2D = metconfig["input_vars_2D"]
-#3D:   zlev
-   if convertnameeaslee["zlev"] == ""
-      #need to calculate height from geopotential
-      ph = 0.
-      if haskey(metfields3D,"ph")
-         phb = 0.
-         ph = metfields3D["ph"][:,:,:,indt]
-         if haskey(metfields3D,"phb")
-            phb = metfields3D["phb"][:,:,:,indt]
-         end
-         ph += phb
-      # (deriving heights from ak/bk instead, when ph is absent, is not implemented)
-      metfields3D["zlev"][:,:,:,indt] = ph/9.81
-      surfacez = metfields3D["zlev"][:,:,1,indt]
-      metfields3D["zlev"][:,:,:,indt] = metfields3D["zlev"][:,:,:,indt] .- reshape(surfacez,size(surfacez, 1), size(surfacez, 2), 1)
-      end
-   end
-#3D:   Ux. Horizontal wind along x axis 
-   if convertnameeaslee["Ux"] == ""
-     stoprun = true
-     #such a case cannot happen on a regular lat/lon grid, as zonal wind and Ux are equal
-     if metconfig["projection"] == "Rectilinear"
-        print("The model has to stop, as zonal wind is missing")
-     else
-        if "AVGFLX_RUM" in metconfig["easlee_vars_3D"]
-           #we need to fix the time of the met field, because it is shifted by the WRF output time step/2.
-           #for the moment, we will assume it is ok
-           mu = metfields2D["muu"][:,:,indt]
-           # AVGFLX_RUM is on the U-stagger grid (Ni+1 points); destagger to mass
-           # points (Ni) by averaging adjacent stagger-point values before dividing
-           # by mu (which lives on mass points).
-           rum_mass = 0.5f0 .* (metfields3D["AVGFLX_RUM"][1:end-1,:,:,indt] .+
-                                 metfields3D["AVGFLX_RUM"][2:end,  :,:,indt])
-           metfields3D["Ux"][:,:,:,indt] = rum_mass ./ reshape(mu, size(mu, 1), size(mu, 2), 1)
-           stoprun = false
-        elseif "Uzonal" in metconfig["easlee_vars_3D"]
-           #need to correct it along the x axis using map factors
-           if "MAPFAC_UX" in metconfig["easlee_vars_2D"]
-              m_u = metfields2D["MAPFAC_UX"][:,:,1,indt]
-              metfields3D["Ux"][:,:,indt] = metfields3D["Uzonal"][:,:,indt]./m_u # need to fix this calculation
-              stoprun = false
-           elseif "MAPFAC_MX" in metconfig["easlee_vars_2D"]
-              m_x = metfields2D["MAPFAC_MX"][:,:,1,indt]
-      if size(m_x[:,:,1,indt]) == size(metfields3D["Uzonal"][:,:,1,1])
-	#check that it has the same size as Uzonal or not. If yes, then Uzonal is on the center grid
-                metfields3D["Ux"][:,:,:,indt] = metfields3D["Uzonal"][:,:,:,indt] ./ m_x # need to fix this calculation
-                stoprun = false
-              else
-                #Uzonal is on the edges and MAPFAC is at the center grid. No choice but to interpolate MAPFAC
-                print("MAPFAC is at the center of grids while U is on the edges. Need to fix the problem")
-                stoprun = true #will need to find a fix later
-              end
-           end
-        end
-     end
-   end
-     #assume that we have zonal wind on a lambert conformal grid
-#3D:   Vy
-   if convertnameeaslee["Vy"] == ""
-     stoprun = true
-     #such a case cannot happen on a regular lat/lon grid, as meridional wind and Vy are equal
-     if metconfig["projection"] == "Rectilinear"
-        print("The model has to stop, as meridional wind is missing")
-     else
-        if "AVGFLX_RVM" in metconfig["easlee_vars_3D"]
-           #we need to fix the time of the met field, because it is shifted by the WRF output time step/2.
-           #for the moment, we will assume it is ok
-           mu = metfields2D["muu"][:,:,indt]   # total dry air column mass (same as Ux)
-           # AVGFLX_RVM is on the V-stagger grid (Nj+1 points); destagger to mass
-           # points (Nj) by averaging adjacent stagger-point values.
-           rvm_mass = 0.5f0 .* (metfields3D["AVGFLX_RVM"][:,1:end-1,:,indt] .+
-                                 metfields3D["AVGFLX_RVM"][:,2:end,  :,indt])
-           metfields3D["Vy"][:,:,:,indt] = rvm_mass ./ reshape(mu, size(mu, 1), size(mu, 2), 1)
-           stoprun = false
-        elseif "Vmerid" in metconfig["easlee_vars_3D"]
-           #need to correct it along the x axis using map factors
-           if "MAPFAC_Vy" in metconfig["easlee_vars_2D"]
-              m_v = metfields2D["MAPFAC_VY"][:,:,1,indt]
-              metfields3D["Vy"][:,:,:,indt] = metfields3D["Vmerid"][:,:,:,indt]./m_v # need to fix this calculation
-              stoprun = false
-           elseif "MAPFAC_My" in metconfig["easlee_vars_2D"]
-              m_y = metfields2D["MAPFAC_MY"][:,:,1,indt]
-              if size(m_y[:,:,1]) == size(metfields3D["Vmerid"][:,:,1,1])
-                #check that it has the same size as Vmerid or not. If yes, then Vmerid is on the center grid
-                metfields3D["Vy"][:,:,:,indt] = metfields3D["Vmerid"][:,:,:,indt]/m_v # need to fix this calculation
-                stoprun = false
-              else
-                #Vmerid is on the edges and MAPFAC is at the center grid. No choice but to interpolate MAPFAC
-                print("MAPFAC is at the center of grids while U is on the edges. Need to fix the problem")
-                stoprun = true #will need to find a fix later
-              end
-           end
-        end
-     end
-   end
-
-#3D:   levdot
-   if convertnameeaslee["levdot"] == ""
-     stoprun = true
-     if metconfig["projection"] == "Rectilinear"
-        print("The model has to stop, as meridional wind is missing")
-     else
-        if "AVGFLX_WWM" in metconfig["easlee_vars_3D"]
-           #we need to fix the time of the met field, because it is shifted by the WRF output time step/2.
-           #for the moment, we will assume it is ok
-           mu   = metfields2D["muu"][:,:,indt]   # total dry air column mass (same as Ux/Vy)
-           # levdot currently holds raw AVGFLX_WWM on w-stagger (Nk_w = Nk_mass+1 levels).
-           # Infer mass-level count from the loaded array rather than metconfig["Nk"],
-           # which counts w-stagger levels for WRF.
-           Nk_w    = size(metfields3D["levdot"], 3)   # w-stagger level count (e.g. 51)
-           Nk_mass = Nk_w - 1                          # mass level count (e.g. 50)
-           # Destagger from w-stagger to mass levels, then convert etadot [1/s] to
-           # dindl/dt [level/s]: multiply by (Nk_mass-1) and negate (WRF eta increases
-           # downward while EASLEE indl increases upward).
-           wwm_mass = 0.5f0 .* (metfields3D["levdot"][:,:,1:end-1,indt] .+
-                                 metfields3D["levdot"][:,:,2:end,  indt])
-           metfields3D["levdot"][:,:,1:Nk_mass,indt] = -wwm_mass ./ reshape(mu, size(mu,1), size(mu,2), 1) .* Float32(Nk_mass - 1)
-           stoprun = false
-        elseif "W" in metconfig["easlee_vars_3D"] 
-            zlev = metfields3D["zlev"][:,:,:,indt]
-            Nk = metconfig["Nk"]
-            metfields3D["levdot"][:,:,2:Nk-1,indt] = levrate_from_w.(metfields3D["W"][:,:,2:Nk-1,indt],
-                                                                      zlev[:,:,1:Nk-2], zlev[:,:,3:Nk])
-            metfields3D["levdot"][:,:,1,indt] = metfields3D["W"][:,:,1,indt] ./ (zlev[:,:,2]-zlev[:,:,1])
-            metfields3D["levdot"][:,:,Nk,indt] = metfields3D["W"][:,:,Nk,indt] ./ (zlev[:,:,Nk]-zlev[:,:,Nk-1])
-        end
-     end
-   end 
-
-#3D:   rho
-   if convertnameeaslee["rho"] == ""
-      #need to calculate rho from T and P
-      P = 0.
-      if haskey(metfields3D,"p")
-         PB = 0.
-         P = metfields3D["p"][:,:,:,indt]
-         if haskey(metfields3D,"pb")
-            PB = metfields3D["pb"][:,:,:,indt]
-         end
-         P += PB
-      # (deriving P from ak/bk instead, when p is absent, is not implemented)
-      end
-      if metconfig["model"] == "WRF"
-         # WRF stores T as perturbation potential temperature θ′ = θ − 300 K.
-         # Recover actual temperature via the Exner function:
-         #   θ = θ′ + 300,   T = θ × (P/P₀)^(R_d/c_p) with P₀=100000 Pa, R_d/c_p=0.2854
-         theta = metfields3D["T"][:,:,:,indt] .+ 300.0f0
-         T = theta .* (P ./ 100000.0f0) .^ 0.2854f0
-      else
-         T = metfields3D["T"][:,:,:,indt]
-      end
-      metfields3D["rho"][:,:,:,indt] = P ./ T ./ 287.05
-   end
-   
-end
+# checkmetfields! (the generic NetCDF derivation, in practice WRF-only) was
+# replaced on 2026-10-13 by metwrffieldcalculation! in metcalc_models.jl.
 # ── Hanna (1982) / FLEXPART helper functions ──────────────────────────────────
 # Duplicated here so initialize.jl (Main scope) can call hanna_fill_tke!
 # without depending on the Operators module.  The authoritative implementation
@@ -1804,6 +2034,34 @@ function _etadot_use_deta!(metconfig, levdot::Array{Float32,4}, Nk::Int, indt::I
    return v
 end
 
+# Levels the archived eta-dot sits on (2026-10-22).  IFS archives param 77 (η̇,
+# s⁻¹) on the FULL levels; flex_extract writes η̇·∂p/∂η (Pa/s) on the HALF
+# levels k+½ under the label k, so its level 137 is the ground interface.
+# Measured against mass continuity (interface flux B·ΣD − Σ_{j≤k}D, D = ∇·(v Δp)
+# from u, v, ps; validation/check_etadot_levels.py):
+#   flex_extract (EAg, ERA5 global): level k ↔ interface k+½ — slope 1.09-1.17 at
+#     every level, level 137 rms 1.6e-4 Pa/s against 3.0e-3 at 136;
+#   raw MARS (ETEX IFS_EA): level k ↔ full level k (mean of k±½) — corr
+#     0.983-0.997, slope 1.06-1.13 at every level including 137.
+# The lowest level separates the two: rms(level 137) / rms(level 136) = 0.05
+# (half: the ground value) against 0.32 (full: half a layer above it).  Decided
+# once per met source from slots 1 and 2 as loaded (bottom-up, unshifted);
+# `#info etadot_levels = full | half` skips the test.
+const _ETADOT_HALF_RATIO = 0.15
+function _etadot_levels!(metconfig, levdot::Array{Float32,4}, indt::Int)
+   m = get(metconfig, "etadot_levels", "auto")::String
+   m == "auto" || return m
+   c = get(metconfig, "_etadot_levels_auto", nothing)
+   c === nothing || return c::String
+   rms(a) = (s = 0.0; n = 0; for x in a; isfinite(x) && (s += Float64(x)^2; n += 1); end; n > 0 ? sqrt(s / n) : 0.0)
+   r1 = rms(view(levdot, :, :, 1, indt)); r2 = rms(view(levdot, :, :, 2, indt))
+   r2 > 0 || return "half"                         # no vertical motion: nothing to place, not cached
+   v = r1 / r2 < _ETADOT_HALF_RATIO ? "half" : "full"
+   @info "eta-dot levels: $v (rms lowest/second level = $(round(r1 / r2, digits=3)); < $(_ETADOT_HALF_RATIO) → half levels, flex_extract; else full levels, raw MARS); decided once per met source"
+   metconfig["_etadot_levels_auto"] = v
+   return v
+end
+
 """
     _levdot_sanity!(metconfig, levdot, zlev, Nk, indt)
 
@@ -1931,6 +2189,16 @@ function _sfcflux_convention!(metconfig, metfields2D, indt::Int, has_stress::Boo
    forced = get(metconfig, "sfcflux_accum", nothing)          # #info sfcflux_units
    acc_sshf = forced === nothing ? _sfcflux_is_accumulated(m_sshf, _SFCFLUX_SSHF_THRESHOLD) : forced::Bool
    acc_tau  = forced === nothing ? _sfcflux_is_accumulated(m_tau,  _SFCFLUX_TAU_THRESHOLD)  : forced::Bool
+   # already rates: converted from their GRIB window by _window_to_rate! (raw
+   # MARS / CDS files, stepRange s0-e); dividing again made them period× too small
+   conv = get(metconfig, "flux_window_converted", String[])::Vector{String}
+   "sshf" in conv && (acc_sshf = false)
+   ("ewss" in conv || "nsss" in conv) && (acc_tau = false)
+   if forced !== nothing &&
+      ((has_sshf && !("sshf" in conv) && _sfcflux_is_accumulated(m_sshf, _SFCFLUX_SSHF_THRESHOLD) != forced) ||
+       (has_stress && !("ewss" in conv || "nsss" in conv) && _sfcflux_is_accumulated(m_tau, _SFCFLUX_TAU_THRESHOLD) != forced))
+      @warn "surface fluxes: #info sfcflux_units = $(metconfig["sfcflux_units"]) contradicts the field magnitudes (max |sshf| = $(m_sshf), accumulated above $(_SFCFLUX_SSHF_THRESHOLD); max |τ| = $(m_tau), above $(_SFCFLUX_TAU_THRESHOLD)) — the declaration is applied"
+   end
    period = 3600.0f0
    if acc_sshf || acc_tau
       step = get(metconfig, "sfcflux_step_s", nothing)
@@ -1941,10 +2209,50 @@ function _sfcflux_convention!(metconfig, metfields2D, indt::Int, has_stress::Boo
       end
    end
    div = (acc_sshf ? period : 1.0f0, acc_tau ? period : 1.0f0)
-   has_sshf && @info "surface fluxes: sshf treated as $(acc_sshf ? "J/m² accumulated over $(round(Int, period)) s" : "W/m² (instantaneous, e.g. flex_extract ERA5 / WRF HFX / AROME — no division)") (max |sshf| = $(m_sshf), decided by $(forced === nothing ? "magnitude, model-agnostic" : "#info sfcflux_units"))"
-   has_stress && @info "surface fluxes: ewss/nsss treated as $(acc_tau ? "N s/m² accumulated over $(round(Int, period)) s" : "N/m² (instantaneous — no division)") (max |τ| = $(m_tau), decided by $(forced === nothing ? "magnitude, model-agnostic" : "#info sfcflux_units"))"
+   why(c) = c ? "already converted from its GRIB window" : forced === nothing ? "magnitude, model-agnostic" : "#info sfcflux_units"
+   has_sshf && @info "surface fluxes: sshf treated as $(acc_sshf ? "J/m² accumulated over $(round(Int, period)) s" : "W/m² (instantaneous, e.g. flex_extract ERA5 / WRF HFX / AROME — no division)") (max |sshf| = $(m_sshf), decided by $(why("sshf" in conv)))"
+   has_stress && @info "surface fluxes: ewss/nsss treated as $(acc_tau ? "N s/m² accumulated over $(round(Int, period)) s" : "N/m² (instantaneous — no division)") (max |τ| = $(m_tau), decided by $(why("ewss" in conv || "nsss" in conv)))"
    metconfig["sfcflux_div"] = div
    return div
+end
+
+"""
+    _log_ol_diurnal(metconfig, metfields2D, indt)
+
+Point-of-use check of the Obukhov-length sign, logged once per run: the share of
+unstable cells (L < 0) and the median L among cells where the upward heat flux
+is above +50 W/m2 (daytime heating) and below -20 W/m2 (night cooling).  A
+correct sign gives L < 0 in the first group and L > 0 in the second.
+"""
+function _log_ol_diurnal(metconfig, metfields2D, indt)
+   get(metconfig, "_ol_logged", false) && return nothing
+   ol = vec(metfields2D["ol"][:,:,indt])
+   H  = vec(metfields2D["sshf"][:,:,indt])
+   sgn = get(metconfig, "sshf_positive", "down") == "down" ? -1.0f0 : 1.0f0
+   # magnitude only decides the groups, so the per-second / accumulated divisor is irrelevant
+   Hup = sgn .* H ./ max(1.0f0, maximum(abs, H) > 5000.0f0 ? 3600.0f0 : 1.0f0)
+   day = ol[Hup .> 50.0f0]; night = ol[Hup .< -20.0f0]
+   # a slot without heating AND cooling cells (no fluxes yet, small domain at
+   # one local time) cannot show the sign: wait for one that can
+   (isempty(day) || isempty(night)) && return nothing
+   med(x) = sort(x)[cld(length(x), 2)]
+   @info "Obukhov length from sshf (sshf_positive=$(get(metconfig, "sshf_positive", "down"))): " *
+         "median L where the surface heats the air (H>50 W/m2, $(length(day)) cells) = $(med(day)) m; " *
+         "where it cools (H<-20 W/m2, $(length(night)) cells) = $(med(night)) m; " *
+         "unstable share $(round(count(<(0.0f0), ol) / max(length(ol), 1), digits=3))"
+   metconfig["_ol_logged"] = true
+   return nothing
+end
+
+# point-of-use log of the Richardson-number Obukhov length (once per run)
+const _OL_RIB_LOGGED = Ref(false)
+function _log_ol_rib(metfields2D, indt)
+   _OL_RIB_LOGGED[] && return nothing
+   ol = filter(isfinite, vec(metfields2D["ol"][:, :, indt]))
+   isempty(ol) && return nothing
+   @info "Obukhov length (bulk Richardson): unstable share $(round(count(<(0.0f0), ol) / length(ol), digits=3)), median $(sort(ol)[cld(length(ol), 2)]) m, zero share $(round(count(==(0.0f0), ol) / length(ol), digits=3))"
+   _OL_RIB_LOGGED[] = true
+   return nothing
 end
 
 function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2D,indt::Int)
@@ -1995,7 +2303,10 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
    # With GRIB fields we add a surface layer to U,V,T,Q (and the CLD fields):
    # shift every level up by one (orig level k → k+1), backward in k to avoid
    # overwriting the source; each step is a contiguous in-place 2-D copy.
-   for key in ("Ux","Vy","T","qv","umf","dmf","udr","ddr","tpf","cc")
+   # (ttlwr/ttswr/ttpm, the radiative heating rates, are full-level fields read
+   #  like T by the isentropic scheme — shifted too since 2026-10-22; they sat
+   #  one full level above the parcel)
+   for key in ("Ux","Vy","T","qv","umf","dmf","udr","ddr","tpf","cc","ttlwr","ttswr","ttpm")
       haskey(metfields3D,key) || continue
       A = metfields3D[key]::Array{Float32,4}
       for k in Nk:-1:2
@@ -2035,14 +2346,36 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
       end
    end
    use_deta = _etadot_use_deta!(metconfig, levdot, Nk, indt)
+   # STACKED layout (2026-10-22): η̇ is loaded unshifted (slot k = archived level
+   # k, bottom-up) and slot k is read at zlev[k], the half level below full
+   # level k.  Right for flex_extract's η̇·∂p/∂η, which sits on the half levels
+   # (its level 137 is the ground); raw MARS η̇ sits on the full levels — there
+   # the half level of slot k gets the mean of full levels k−1 and k
+   # (_etadot_levels!).  Either way slot k's index spacing is deta[k−1].
+   etalev = _etadot_levels!(metconfig, levdot, indt)
+   if etalev == "full"
+      for k in Nk:-1:2
+         @views levdot[:,:,k,indt] .= 0.5f0 .* (levdot[:,:,k,indt] .+ levdot[:,:,k-1,indt])
+      end
+   end
+   if !get(metconfig, "_layout_logged", false)
+      metconfig["_layout_logged"] = true
+      @info "met field positions (GRIB, hybrid model levels): every field on the regular grid at the same points (GRIB has no staggering); " *
+            "u, v, T, q on the model (full) levels → slots 2…Nk, slot 1 = surface values (u, v = lowest level); " *
+            "zlev = the interfaces (hydrostatic, half levels); η̇ on the $etalev levels" *
+            (etalev == "full" ? " → averaged to the half levels" : " (as is)")
+   end
+   deta_h = vcat(deta[1], deta[1:end-1])
    _run_k!(nt, 2, Nk-1, kr -> _levdrho_chunk!(kr, levdot, puv, rho, drhodz, zlev,
-                                              use_deta ? deta : nothing, indt))
+                                              use_deta ? deta_h : nothing, indt))
    _levdot_sanity!(metconfig, levdot, zlev, Nk, indt)
    @views drhodz[:,:,1,indt]  .= drhodz[:,:,2,indt]
    @views drhodz[:,:,Nk,indt] .= drhodz[:,:,Nk-1,indt]
 
-   # Surface levdot (indl=1): half of levdot[2] instead of 0, same as AROME path.
-   @views levdot[:,:,1,indt] .= levdot[:,:,2,indt] .* 0.5f0
+   # Ground and top half levels are coordinate surfaces: levdot = 0 (until
+   # 2026-10-22 the ground took ½ of levdot[2] and the top kept the raw η̇)
+   @views levdot[:,:,1,indt]  .= 0.0f0
+   @views levdot[:,:,Nk,indt] .= 0.0f0
    @views zlev[:,:,Nk,indt]  .= zlev[:,:,Nk,indt] .+ 20000.0f0
    fill!(view(metfields3D["dsigwdz"],:, :, :, indt), 0.0f0)
    # Potential temperature θ = T·(p0/p)^(R/cp), p0=100000 Pa, R/cp≈0.2857 (threaded;
@@ -2064,7 +2397,10 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
    has_ol    = haskey(metfields2D, "ol")     && maximum(abs.(metfields2D["ol"][:,:,indt])) > 0
 
    has_stress = haskey(metfields2D, "ewss") && haskey(metfields2D, "nsss")
-   has_sshf   = haskey(metfields2D, "sshf") && haskey(metfields2D, "2t")
+   # (2026-10-22) mapped AND present in this file: an absent message leaves the
+   # reset zeros, which would give |L| at its clamp, i.e. neutral, silently
+   has_sshf   = haskey(metfields2D, "sshf") && haskey(metfields2D, "2t") &&
+                any(x -> isfinite(x) && x != 0, view(metfields2D["sshf"], :, :, indt))
 
    # review 2026-09-04 A3 (item 1): divisors that bring the archived fluxes to
    # per-second units (1 when the values already are W/m² / N/m², the
@@ -2081,10 +2417,16 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
    end
 
    if !has_ol && has_sshf && has_ustar
-       # Obukhov length L = -ρ·cp·T·u*³ / (κ·g·H)
-       # sshf → W/m² through div_sshf (1 for per-second values, period for J/m²)
-       # ERA5 sign: sshf < 0 for upward (unstable); L < 0 unstable
-       H_flux  = metfields2D["sshf"][:,:,indt] ./ div_sshf   # W/m²; negative=upward heat
+       # Obukhov length L = -ρ·cp·T·u*³ / (κ·g·H), H POSITIVE UPWARD, so that a
+       # heated surface (H > 0) gives L < 0 (unstable).
+       # sshf → W/m² through div_sshf (1 for per-second values, period for J/m²),
+       # then to the upward convention: ECMWF archives sshf positive DOWNWARD
+       # (#info sshf_positive, default "down").  Until 2026-10-13 the raw ECMWF
+       # value was used, which made every daytime surface layer stable and every
+       # night unstable (reported by Yue Huang); pblh, derived from L below,
+       # inherited the inverted diurnal cycle.
+       sgn_up  = get(metconfig, "sshf_positive", "down") == "down" ? -1.0f0 : 1.0f0
+       H_flux  = sgn_up .* metfields2D["sshf"][:,:,indt] ./ div_sshf   # W/m², positive upward
        rho_sfc = metfields2D["sp"][:,:,indt] ./ metfields2D["2t"][:,:,indt] ./ 287.05f0
        ustar3  = max.(metfields2D["ustar"][:,:,indt], 0.001f0).^3
        cp = 1004.0f0; κ = 0.4f0; g = 9.81f0
@@ -2092,6 +2434,18 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
                 (κ .* g .* (H_flux .- sign.(H_flux) .* 1f-6))
        metfields2D["ol"][:,:,indt] .= clamp.(ol_arr, -5000.0f0, 5000.0f0)
        has_ol = true
+       _log_ol_diurnal(metconfig, metfields2D, indt)
+   end
+
+   if !has_ol && has_ustar && haskey(metfields2D, "ol")
+       # No heat flux in the files (ERA5_CAPTEX/CONV/FULL/CAPE map zust and blh but
+       # not sshf): L from the surface-layer bulk Richardson number.  Until
+       # 2026-10-22 L stayed 0 here — the Hanna fill took its neutral branch with
+       # w* = 0 everywhere, i.e. neutral turbulence on every such run (ETEX, CAPTEX).
+       _ol_bulk_richardson!(metfields3D, metfields2D, indt, Ni, Nj)
+       has_ol = true
+       @warn "no surface heat flux mapped: Obukhov length from the surface-layer bulk Richardson number" maxlog=1
+       _log_ol_rib(metfields2D, indt)
    end
 
    if !has_pblh && has_ustar
@@ -2166,25 +2520,34 @@ function metaromefieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields
 
    @. sp  = exp(lspv)
    @. h2  = 0.0f0
-   @. tvo = t2m
    @. po  = sp
    @views zlev[:,:,1] .= 0.0f0
-   # Hypsometric integration, plane by plane (reads PRE-shift T/q).
-   # ifelse evaluates both branches elementwise: when tv≈tvold the (tv-tvold)/log(tv/tvold)
-   # branch may produce NaN but is not selected — same result as the original mask form.
+   # The file's Ak/Bk are the HALF levels (layer interfaces), top-down: Ak[1] =
+   # Bk[1] = 0 is the model top (p = 0), Bk[end] ≈ 0.999 the interface just above
+   # the ground; the ground itself (p = sp) is not listed.  Reversed (akz, bkz):
+   # interface k above the surface, k = 1 … Nk−1.  Mass level k lies between
+   # interfaces k−1 (the ground for k = 1) and k: its pressure is their mean (as
+   # in the IFS).  Until 2026-10-13 the interface pressures were taken as the
+   # mass-level pressures and p = 0 at the top level.  Reads PRE-shift T/q.
+   # STACKED layout (2026-10-22): zlev[k+1] is the INTERFACE above mass level k
+   # (the transport reads zlev and levdot on half levels and T, p, u, v on the full
+   # levels between them — the ERA5 reader's layout); 2026-10-13 had put zlev on
+   # the mass levels.  The top interface (p = 0) is placed twice the half-layer
+   # above the bottom interface of the top level instead of integrating to p → 0.
    for k in 1:Nk-1
       tk = @view T3[:,:,k]; qk = @view Q3[:,:,k]
-      ak1 = akm[k+1]; bk1 = bkm[k+1]
+      akk = akz[k]; bkk = bkz[k]
       @. tv   = tk*(1.0f0 + 0.608f0*qk)
-      @. pint = max(ak1 + bk1*sp, 0.1f0)
-      @. h2  += ifelse(abs(tv - tvo) > 0.2f0,
-                       cst*log(po/pint)*(tv - tvo)/log(tv/tvo),
-                       cst*log(po/pint)*tv)
-      @views zlev[:,:,k+1] .= h2
-      akzk = akz[k]; bkzk = bkz[k]
-      @views @. puv[:,:,k+1] = akzk + bkzk*sp
-      @. tvo = tv
-      @. po  = pint
+      @. pint = akk + bkk*sp                                   # interface above level k
+      @. tvo  = 0.5f0*(po + pint)                              # (buffer reuse) mass-level pressure
+      @views @. puv[:,:,k+1]  = tvo
+      if k < Nk-1
+         @. h2 += cst*tv*log(po/pint)                          # interface above level k
+      else
+         @. h2 += 2.0f0*cst*tv*log(po/tvo)                     # model top (p = 0)
+      end
+      @views @. zlev[:,:,k+1] = h2
+      @. po   = pint
    end
 
    # Shift u,v,T,q up one level — in-place plane copies, descending k
@@ -2202,26 +2565,59 @@ function metaromefieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields
    @views Vy[:,:,1] .= Vy[:,:,2]
    @views Q3[:,:,1] .= Q3[:,:,2]
 
-   # levdot: integrate NH_dW to interface w, then convert to level rate
-   lev = @view (metfields3D["levdot"]::Array{Float32,4})[:,:,:,indt]
-   NHW = @view (metfields3D["NH_dW"]::Array{Float32,4})[:,:,:,indt]
-   @views lev[:,:,1] .= 0.0f0
-   for k in 1:Nk-1
-      @views @. lev[:,:,k+1] = lev[:,:,k] - NHW[:,:,k]/9.81f0
+   # Vertical velocity from NH_dW (2026-10-13).  The file defines, top-down,
+   # D = −g·(w(i) − w(i−1)): w(i) the interface BELOW level i, so going up
+   # w_top = w_bottom + D/g.  Integrated from the ground with the kinematic value
+   # w_s = V·∇z_s (lowest-level wind), the column closes at the model top
+   # (|w| 0.06-0.07 m/s over La Réunion's land, against 0.45-0.55 m/s with the
+   # opposite sign the reader used, which also started from w = 0).  Stacked
+   # layout: slot k+1 holds w on the interface above layer k, and
+   # _terrain_following_levdot_stacked! turns it into the coordinate velocity.
+   lev3 = metfields3D["levdot"]::Array{Float32,4}
+   lev  = @view lev3[:,:,:,indt]
+   NHW  = @view (metfields3D["NH_dW"]::Array{Float32,4})[:,:,:,indt]
+   zsf  = (metfields2D["zg"]::Array{Float32,3})[:,:,indt] ./ _G0      # terrain height ASL [m]
+   sx, sy = _grid_spans_m!(metconfig, Ni, Nj)
+   Threads.@threads :static for j in 1:Nj
+      j0 = max(j - 1, 1); j1 = min(j + 1, Nj)
+      @inbounds for i in 1:Ni
+         i0 = max(i - 1, 1); i1 = min(i + 1, Ni)
+         wb = Ux[i,j,2] * (zsf[i1,j] - zsf[i0,j]) / max(sx[i,j], 1.0f0) +
+              Vy[i,j,2] * (zsf[i,j1] - zsf[i,j0]) / max(sy[i,j], 1.0f0)   # w at the ground
+         for k in 1:Nk-1                        # layer k (bottom-up); its top interface = slot k + 1
+            wt = wb + NHW[i,j,k] / _G0
+            lev[i,j,k+1] = wt                   # stacked layout: w on the interfaces
+            wb = wt
+         end
+         lev[i,j,1] = 0.0f0
+      end
    end
+   _terrain_following_levdot_stacked!(metconfig, lev3, metfields3D["zlev"]::Array{Float32,4}, zsf,
+                              metfields3D["Ux"]::Array{Float32,4}, metfields3D["Vy"]::Array{Float32,4},
+                              Ni, Nj, Nk, indt)
    rho = @view (metfields3D["rho"]::Array{Float32,4})[:,:,:,indt]
    @. rho = puv/T3/287.05f0
    tke  = @view (metfields3D["tke"]::Array{Float32,4})[:,:,:,indt]
+   # The file's TKE is on the mass levels and was loaded unshifted (slot k = mass
+   # level k), while the transport reads tke on the half levels with zlev
+   # (stacked layout): the interface above mass level k−1 (slot k) gets the mean
+   # of mass levels k−1 and k; the ground keeps the lowest level's value, the
+   # top the highest's (2026-10-22: it sat one full level off before, half after
+   # the stacked zlev).  Descending: tke[k−1] is still a mass value when read.
+   tke[:,:,Nk] .= tke[:,:,Nk-1]
+   for k in Nk-1:-1:2
+      @views tke[:,:,k] .= 0.5f0 .* (tke[:,:,k-1] .+ tke[:,:,k])
+   end
    drho = @view (metfields3D["drhodz"]::Array{Float32,4})[:,:,:,indt]
    dsig = @view (metfields3D["dsigwdz"]::Array{Float32,4})[:,:,:,indt]
    for k in 2:Nk-1
       @views @. dz2 = zlev[:,:,k+1] - zlev[:,:,k-1]
-      @views @. lev[:,:,k]  = levrate_from_w(lev[:,:,k+1], zlev[:,:,k-1], zlev[:,:,k+1])
       @views @. drho[:,:,k] = (rho[:,:,k+1] - rho[:,:,k-1])/dz2
       @views @. dsig[:,:,k] = (max(sqrt(2.0f0*tke[:,:,k+1]), 0.2f0) -
                                max(sqrt(2.0f0*tke[:,:,k-1]), 0.2f0))/dz2
    end
-   @views @. lev[:,:,1] = lev[:,:,2]*0.5f0
+   # (lev[:,:,1] = 0: the ground half level is a coordinate surface — set by
+   #  _terrain_following_levdot_stacked!, which also zeroes the top)
 
    theta = @view (metfields3D["theta"]::Array{Float32,4})[:,:,:,indt]
    @. theta = T3*(100000.0f0/puv)^0.28573f0
@@ -2325,6 +2721,20 @@ function initoutgrid(runconfig,input,metconfig)
    dyout = parse(Float32,runconfig["OUTGRID"]["DYOUT"][1])
    outputconfig["dlon"] = dxout
    outputconfig["dlat"] = dyout
+   # [output.grid].crs: "lonlat" (default) or "native" (projection metres of a
+   # Lambert nest).  Honoured since 2026-10-13.
+   crs = haskey(runconfig["OUTGRID"], "CRS") ?
+         lowercase(strip(String(runconfig["OUTGRID"]["CRS"][1]))) : "lonlat"
+   crs in ("lonlat", "native") || error("[output.grid].crs must be lonlat or native, got \"$crs\"")
+   if crs == "native"
+      metconfig[1]["projection"] == "Lambert" ||
+         error("[output.grid].crs = \"native\" needs a Lambert first nest (WRF, AROME); " *
+               "this run's first nest is $(metconfig[1]["projection"]) — use crs = \"lonlat\"")
+      length(metconfig) == 1 ||
+         error("[output.grid].crs = \"native\" is not supported with several nests " *
+               "(the other nests cannot map onto nest 1's projection) — use crs = \"lonlat\"")
+   end
+   outputconfig["crs"] = crs
    lon0 = parse(Float32,runconfig["OUTGRID"]["OUTLON0"][1])
    lat0 = parse(Float32,runconfig["OUTGRID"]["OUTLAT0"][1])
    outputconfig["lon0"] = lon0
@@ -2336,14 +2746,10 @@ function initoutgrid(runconfig,input,metconfig)
    area = zeros(Niout,Njout)
     volume = zeros(Niout,Njout,Nkout)
     typeofgrid = metconfig[1]["projection"]
-    if typeofgrid == "Lambert"
-          # dxout and dyout are in meters for Lambert
-          for j=1:Njout
-                for i=1:Niout
-                      area[i,j] = dxout * dyout
-                end
-          end
-    else
+    # lonlat output (any projection; Lambert nests map parcels through lon/lat)
+    # → spherical cell areas.  A native Lambert grid gets its map-factor areas
+    # below, where the cell latitudes are sampled.
+    begin
           for j=1:Njout
              ylat1 = lat0+dyout*(j-1)
              ylat2 = lat0+dyout*j
@@ -2369,7 +2775,7 @@ function initoutgrid(runconfig,input,metconfig)
    # OUTLON0/DXOUT are PROJECTION METRES.  Sample the nest's own LON/LAT onto
    # the output grid so the file carries true geographic coordinates instead of
    # metres mislabelled "degrees_east" (which put the grid at 0N 0E).
-   outputconfig["proj_m"] = (typeofgrid == "Lambert")
+   outputconfig["proj_m"] = (crs == "native")
    if outputconfig["proj_m"] && haskey(metconfig[1], "longitudes")
       nlon = Float32.(metconfig[1]["longitudes"])
       nlat = Float32.(metconfig[1]["latitudes"])
@@ -2389,6 +2795,17 @@ function initoutgrid(runconfig,input,metconfig)
       end
       outputconfig["lon2d"] = lon2d
       outputconfig["lat2d"] = lat2d
+      # True cell area on the conformal grid: (dx/m)·(dy/m), m from the cell
+      # latitude (Lambert closed form, chi = colatitude):
+      #   m = sin(chi1)/sin(chi) · (tan(chi/2)/tan(chi1/2))^n
+      # (the constant dx·dy used until 2026-10-13 biased concentrations by m²)
+      hemi = Float64(metconfig[1]["proj_hemi"]); n = Float64(metconfig[1]["proj_cone"])
+      chi1 = deg2rad(90.0 - hemi * Float64(metconfig[1]["proj_truelat1"]))
+      for j in 1:Njout, i in 1:Niout
+         chi = deg2rad(90.0 - hemi * Float64(lat2d[i, j]))
+         m = sin(chi1) / sin(chi) * (tan(chi / 2) / tan(chi1 / 2))^n
+         area[i, j] = dxout * dyout / m^2
+      end
       @info "output grid CRS = native (projection metres)" x_m=(lon0, lon0+dxout*(Niout-1)) lon_deg=(round(minimum(lon2d),digits=3), round(maximum(lon2d),digits=3)) lat_deg=(round(minimum(lat2d),digits=3), round(maximum(lat2d),digits=3))
    end
    if any(area .< 0)
@@ -2437,6 +2854,8 @@ outputconfig["outinterfaces"] = outinterfaces
 # zoutlinear maps physical height [m] → fractional layer index.
 # outinterfaces has Nkout elements (the edge heights); layer k spans
 # (outinterfaces[k-1], outinterfaces[k]], so we map outinterfaces → 1:Nkout.
+Nkout >= 2 || error("[output.grid].heights needs at least two values, the 0 m bottom edge first " *
+                    "(e.g. [0.0, 1000.0] for one layer); got $(outinterfaces)")
 zoutlinear = linear_interpolation(outinterfaces, 1:Nkout)
 outputconfig["zoutlinear"] = zoutlinear
    outputconfig["grid"] = zeros(Float32,(Niout,Njout,Nkout,Nc))

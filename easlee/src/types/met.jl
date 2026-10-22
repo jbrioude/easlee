@@ -75,17 +75,28 @@ function DiagConvFields(d2::AbstractDict, d3::AbstractDict = Dict{String,Any}())
 end
 
 # Build from the legacy metfields3D Dict (shares array references, like
-# MetFields3D).  Returns `nothing` when the convective fields were not listed
-# in the run's variables file — callers treat that as "convection off".
-function ConvFields(d::AbstractDict)
-    haskey(d, "umf") || return nothing
-    A = typeof(d["umf"])
-    zero_arr() = zeros(Float32, size(d["umf"])...)
+# MetFields3D).  Returns `nothing` when the fields the caller needs were not
+# listed in the run's variables file.
+#   require = :convection (default) — needs the updraft mass flux umf;
+#   require = :wetdep — needs only the precipitation flux tpf (cc optional).
+# Wet deposition reads tpf and cc and nothing else, so it must not depend on
+# umf: until 2026-10-13 it did (one constructor for both), which switched wet
+# deposition off silently on every dataset without a convective mass flux —
+# GFS among them, whose reader builds tpf from the surface precipitation rate
+# (reported by Yue Huang).
+function ConvFields(d::AbstractDict; require::Symbol = :convection)
+    require in (:convection, :wetdep) || throw(ArgumentError("require = :convection | :wetdep"))
+    key = require === :convection ? "umf" : "tpf"
+    haskey(d, key) || return nothing
+    A = typeof(d[key])
+    zero_arr() = zeros(Float32, size(d[key])...)
+    # wet deposition reads tpf and cc only (and takes the level count from cc):
+    # the absent convective fields share one minimal array instead of four
+    # full-size ones (~1.4 GB on a global 0.25° grid)
+    tiny = require === :wetdep ? zeros(Float32, ntuple(_ -> 1, ndims(d[key]))...) : nothing
+    conv_or_zero(k) = haskey(d, k) ? d[k] : (tiny === nothing ? zero_arr() : tiny)
     ConvFields{A}(
-        d["umf"],
-        haskey(d, "dmf") ? d["dmf"] : zero_arr(),
-        haskey(d, "udr") ? d["udr"] : zero_arr(),
-        haskey(d, "ddr") ? d["ddr"] : zero_arr(),
+        conv_or_zero("umf"), conv_or_zero("dmf"), conv_or_zero("udr"), conv_or_zero("ddr"),
         haskey(d, "tpf") ? d["tpf"] : zero_arr(),
         haskey(d, "cc")  ? d["cc"]  : zero_arr(),
     )

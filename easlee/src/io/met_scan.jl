@@ -50,6 +50,7 @@ function scan_met_directory(directory::AbstractString; model::AbstractString="",
     for f in sort(files)
         try
             vts = fmt == "grib" ? _grib_validtimes(f; multistep=multistep) :
+                  uppercase(model) == "AROME" ? _arome_validinit(f) :
                                   [(d, d) for d in _netcdf_validtimes(f; model=model)]
             isempty(vts) && (d = _date_from_filename(basename(f)); d !== nothing && (vts = [(d, d)]))
             for (vt, it) in vts
@@ -130,6 +131,27 @@ function _netcdf_validtimes(path::AbstractString; model::AbstractString="")
     return DateTime[]
 end
 
+# Météo-France AROME NetCDF (AR_T<HHMM>P_<yyyymmdd>_<hh>.nc): `date` (yyyymmdd)
+# is the RUN date, T<HHMM>P the run hour, `forecast` (= <hh>) the LEAD hour:
+# valid = date + run hour + lead.  The archive holds leads 06-17 of the 00 and
+# 12 UTC runs (which tile the day) and leads 06-11 of the 06 and 18 UTC runs;
+# overlapping valid times resolve to the freshest run like any other cycle.
+# Checked on La Réunion 2024-06-29/30: under this reading land T2m is
+# continuous across runs (steps ≤ 2.7 K, the morning rise), while reading
+# `forecast` as the valid hour puts four runs' "10 UTC" 4.8 K apart.
+# History: until 2026-10-13 every file was read as <date> 00:00 (a whole day on
+# one valid time); a first fix the same day read `forecast` as the valid hour,
+# which was wrong for every run but 00 UTC.
+function _arome_validinit(path::AbstractString)
+    v = NetCDF.open(path)
+    g = v.gatts
+    (haskey(g, "date") && haskey(g, "forecast")) || return Tuple{DateTime,DateTime}[]
+    day  = DateTime(strip(string(g["date"])), dateformat"yyyymmdd")
+    m    = match(r"T(\d{2})(\d{2})P", basename(path))
+    init = m === nothing ? day : day + Hour(parse(Int, m.captures[1])) + Minute(parse(Int, m.captures[2]))
+    return [(init + Hour(parse(Int, strip(string(g["forecast"])))), init)]
+end
+
 # ── Filename fallback (operational naming conventions) ────────────────────────
 function _date_from_filename(name::AbstractString)
     try
@@ -143,6 +165,10 @@ function _date_from_filename(name::AbstractString)
         # AROME …YYYY-MM-DDTHH-MM-SSZ…  (base time; steps via the header path)
         m = match(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z", name)
         m !== nothing && return DateTime(m.captures[1] * "T" * m.captures[2] * ":" * m.captures[3] * ":" * m.captures[4])
+        # AROME AR_T<HHMM>P_<yyyymmdd>_<hh>.nc: run date + run hour + lead hour
+        m = match(r"T(\d{2})(\d{2})P_(\d{8})_(\d{2})\.\w+$", name)
+        m !== nothing && return DateTime(m.captures[3], dateformat"yyyymmdd") + Hour(parse(Int, m.captures[1])) +
+                                Minute(parse(Int, m.captures[2])) + Hour(parse(Int, m.captures[4]))
         # Plain YYYYMMDD[HH] (require a non-digit or end on both sides so we
         # don't grab a version token like MERRA2_400).
         m = match(r"(?<!\d)(\d{4})(\d{2})(\d{2})(\d{2})?(?!\d)", name)
@@ -230,9 +256,26 @@ end
 # makes the validity check exact for archives whose overlapping cycles leave some files
 # out of the index (the scanner keeps the freshest cycle per valid time).
 sidecar_path(index::AbstractString) = index * ".files"
+# Version of the scanner that wrote an index, stamped as the sidecar's first line
+# ("# easlee-scan N", no tab: readers of the file list skip it).  3 = AROME valid
+# times = run date + run hour + lead (2026-10-13; version 2, the same day, read
+# the lead as the valid hour).  An older AROME index (no stamp, or 2) would
+# otherwise be reused forever, since its files and sizes still match — it is
+# rescanned instead.
+const SCAN_VERSION = 3
+const _SCAN_VERSION_REQUIRED = Dict("AROME" => 3)
+function _sidecar_scan_version(path::AbstractString)
+    isfile(path) || return 0
+    for l in eachline(path)
+        m = match(r"^# easlee-scan (\d+)", l)
+        m === nothing || return parse(Int, m.captures[1])
+    end
+    return 1
+end
 function write_available_sidecar!(index::AbstractString, metdir::AbstractString;
                                   include_only::Vector{Regex}=Regex[], exclude::Vector{Regex}=Regex[])
     open(sidecar_path(index), "w") do io
+        println(io, "# easlee-scan ", SCAN_VERSION)
         for f in list_main_met_files(metdir; include_only=include_only, exclude=exclude)
             println(io, f, "\t", filesize(joinpath(metdir, f)))
         end
@@ -245,8 +288,14 @@ _read_sidecar(path) = [(String(split(l, '\t')[1]), parse(Int, split(l, '\t')[2])
 # must be exactly those recorded; without one, no main file may be newer than the index.
 # Returns (ok, reason).
 function cached_available_ok(index::AbstractString, metdir::AbstractString;
-                             include_only::Vector{Regex}=Regex[], exclude::Vector{Regex}=Regex[])
+                             include_only::Vector{Regex}=Regex[], exclude::Vector{Regex}=Regex[],
+                             model::AbstractString="")
     isfile(index) || return false, "no $(basename(index)) in $metdir"
+    need = get(_SCAN_VERSION_REQUIRED, uppercase(model), 0)
+    if need > 0
+        v = _sidecar_scan_version(sidecar_path(index))
+        v >= need || return false, "index written by an older scanner (scan version $(v == 0 ? "unknown, no sidecar" : v); $(uppercase(model)) needs $need)"
+    end
     entries = read_available_entries(index)
     isempty(entries) && return false, "$(basename(index)) lists no files"
     listed = unique!(sort!([normpath(f) for (_, f) in entries]))

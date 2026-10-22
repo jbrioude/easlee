@@ -62,3 +62,26 @@ function progress_printer()
         flush(stdout)
     end
 end
+
+"""
+    set_stall_abort!(easy)
+
+Abort a transfer only when it STALLS (below 1 kB/s for 120 s), never because it
+is long.  `Downloads`' `timeout` keyword is a limit on the WHOLE request: the
+120 s the scripts used to pass killed every MERRA-2 file (2.2 GB) at ~1.8 GB,
+three times, after which the file was reported as absent.  Call it from a
+`Downloader`'s `easy_hook`.
+"""
+function set_stall_abort!(easy)
+    C = Downloads.Curl
+    C.setopt(easy, C.CURLOPT_LOW_SPEED_LIMIT, Clong(1024))
+    C.setopt(easy, C.CURLOPT_LOW_SPEED_TIME, Clong(120))
+    return nothing
+end
+
+"A `Downloader` with no total time limit that still aborts a stalled transfer."
+function stall_safe_downloader()
+    d = Downloads.Downloader()
+    d.easy_hook = (easy, _) -> set_stall_abort!(easy)
+    return d
+end

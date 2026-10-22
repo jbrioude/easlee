@@ -102,3 +102,23 @@ in bias (docs/ETEX_RESULTS.md: R +0.006, KSP −1.0, FB +0.053, RANK flat).
 
 Data: `/data/ETEX_VOD/omega/IFS_EA_W.grb` (param 135, 2 dates × 2 bases × 2
 steps × 137 levels), MARS request `ea_w.req` on the ECMWF side.
+
+## Levels (2026-10-22): the two conventions are not on the same levels either
+
+The same continuity argument fixes the flux through every interface from u, v and
+p_s alone: F(k+½) = B(k+½)·ΣD − Σ_{j≤k} D_j, D_j = ∇·(v_j Δp_j).  Correlating the
+archived value at GRIB level k with F above (k−½), below (k+½) and with their mean
+(`validation/check_etadot_levels.py`):
+
+| archive | best match | slope at levels 136 … 70 | rms(137)/rms(136) |
+|---|---|---|---|
+| flex_extract η̇·∂p/∂η (EAg 2010-11-04 22 UTC, ERA5 global 2022-01-15 03 UTC) | interface k+½ below the label: **half levels**, level 137 = the ground | 1.08-1.19 | 0.053, 0.058 |
+| raw MARS η̇ (ETEX IFS_EA 1994-10-24 06 UTC +10 h) | mean of k±½: **full levels** | 1.06-1.14 | 0.319 |
+
+Loaded bottom-up and unshifted, slot k is read at zlev[k], the half level below
+full level k: right for flex_extract, half a layer low for raw MARS, whose values
+are averaged to the half levels.  `_etadot_levels!` decides once per met source
+from the lowest-level ratio (threshold 0.15); `#info etadot_levels = full | half`
+skips the test.  Until 2026-10-22 raw MARS archives (ETEX, CAPTEX) were read half
+a layer low; for a few hours on 2026-10-22 (b778cec..02858a1, never released)
+flex_extract archives were averaged, i.e. read half a layer high.

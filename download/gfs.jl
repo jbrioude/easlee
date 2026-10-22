@@ -30,6 +30,9 @@ using Printf
 include(joinpath(@__DIR__, "cli.jl"))
 include(joinpath(@__DIR__, "easlee_available.jl"))
 
+# no total time limit (a 0.25-degree file is ~500 MB); stalls still abort
+const DOWNLOADER = stall_safe_downloader()
+
 const NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
 const AWS    = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 
@@ -70,7 +73,7 @@ function fetch_file(url::AbstractString, dest::AbstractString; tries::Int=3)
     tmp = dest * ".part"
     for k in 1:tries
         try
-            Downloads.download(url, tmp; timeout=120, progress=progress_printer())
+            Downloads.download(url, tmp; downloader=DOWNLOADER, progress=progress_printer())
             println()
             mv(tmp, dest; force=true)
             return true

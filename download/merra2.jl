@@ -74,6 +74,7 @@ function make_downloader()
         C.setopt(easy, C.CURLOPT_NETRC, C.CURL_NETRC_OPTIONAL)
         C.setopt(easy, C.CURLOPT_UNRESTRICTED_AUTH, Clong(1))
         C.setopt(easy, C.CURLOPT_COOKIEFILE, "")
+        set_stall_abort!(easy)
     end
     return d
 end
@@ -91,7 +92,7 @@ function fetch_file(url, dest, headers, downloader; tries::Int=3)
     for k in 1:tries
         try
             resp = Downloads.request(url; output=tmp, headers=headers,
-                                     downloader=downloader, timeout=120,
+                                     downloader=downloader,
                                      progress=progress_printer(), throw=true)
             println()
             ctype = ""
@@ -122,7 +123,9 @@ function fetch_file(url, dest, headers, downloader; tries::Int=3)
             k < tries && sleep(5k)
         end
     end
-    return false
+    # only a 404 means "not there" (the caller then tries the 401 stream); a transfer
+    # that kept failing is an error, not an absent file
+    error("download failed after $tries tries: $url")
 end
 
 function main(args=ARGS)
