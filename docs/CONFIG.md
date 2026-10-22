@@ -110,6 +110,26 @@ lon0 = 60.0 ; lat0 = -55.0 ; nx = 120 ; ny = 100 ; dx = 0.25 ; dy = 0.25
 heights = [0, 500, 1000, 2000, 3000, 4000, 6000, 8000, 10000, 12000]
 ```
 
+**Synchronisation step (`run.timestep`).** A parcel's horizontal position advances
+once per synchronisation step, with the wind at its position at the start of the
+step; the vertical motion and the turbulence are sub-stepped (`physics.ctl`).
+Choose the step so that a parcel crosses about one grid cell per step,
+Δt ≈ Δx / U for a typical wind U: 10–15 min on ERA5 at 0.25°, a few minutes on
+km-scale grids (AROME 1.3 km: 5 min or less; the shipped AROME configurations
+use 5 min).
+
+**Output grid coordinates (`[output.grid] crs`).** `crs = "lonlat"` (default)
+is a geographic grid on every meteorology, Lambert (WRF, AROME) included: lon0,
+lat0, dx, dy in degrees, cell (i, j) spanning [lon0 + (i−1)·dx, lon0 + i·dx) ×
+[lat0 + (j−1)·dy, lat0 + j·dy), spherical cell areas.  `crs = "native"` is a
+grid in the projection metres of a single Lambert nest (`nest = 1`): lon0/lat0
+are the x/y offsets from the first mass point, dx/dy in metres, cell areas
+DX·DY/m² with the map factor m, and the NetCDF carries 2-D longitude/latitude.
+A lonlat box that does not fit on the sphere (metres given without
+`crs = "native"`) is refused at validation.  `heights` lists the layer EDGES,
+0 m first (at least two values).  `validation/check_output_mapping.jl` checks,
+parcel by parcel, that the mass lands in the cell that contains it.
+
 ### Warm start (`[run] checkpoint` / `restart`)
 
 ```toml

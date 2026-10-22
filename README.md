@@ -14,7 +14,7 @@ julia --project=easlee scripts/easlee.jl configs/wrf_era5_nest.toml
 
 > **What is in this release.** This is the **transport engine** only. The reactive-chemistry module (gas-phase mechanisms, chemical solvers, photolysis, heterogeneous chemistry, emission inventories, the adjoint) is not included here. Mixing between trajectories and the adaptive output kernel *are* included.
 
-**→ What changed in v1.1** (transport, meteorological input and output, no chemistry): [CHANGES.md](CHANGES.md).
+**→ What changed in v1.1 and v1.1.1** (transport, meteorological input and output, no chemistry): [CHANGES.md](CHANGES.md).
 
 ## What it can do
 

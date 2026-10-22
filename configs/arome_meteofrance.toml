@@ -16,7 +16,7 @@ variables = "AROME"
 direction = "forward"
 start     = 2024-06-29T12:00:00.000Z
 stop      = 2024-06-29T13:30:00.000Z
-timestep  = "15min"
+timestep  = "5min"                   # km-scale grid: a few minutes (docs/CONFIG.md, synchronisation step)
 
 [physics]
 ctl   = 5.0

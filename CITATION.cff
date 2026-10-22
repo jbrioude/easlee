@@ -10,8 +10,8 @@ authors:
   - family-names: Augerai
     given-names: Rémi
     affiliation: "LACy, Laboratoire de l'Atmosphère et des Cyclones, UMR 8105 CNRS, Université de La Réunion, Météo-France, Saint-Denis, La Réunion, France"
-version: 1.1.0
-date-released: 2026-10-08
+version: 1.1.1
+date-released: 2026-10-22
 repository-code: "https://github.com/jbrioude/easlee"
 url: "https://gitlab.osureunion.fr/brioude/easlee"
 license: GPL-3.0-or-later

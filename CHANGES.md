@@ -1,5 +1,55 @@
 # EASLEE transport distribution — changes
 
+## v1.1.1 (2026-10-22) — verified meteorological interfaces
+
+The interfaces to the meteorological models were verified on real data with tests
+that do not depend on observations (hydrostatic and kinematic consistency, the
+well-mixed criterion on real fields, the position of each field in the files),
+following points reported by Yue Huang on the WRF interface.  The tests are in
+`validation/`.
+
+Changes to the ERA5 results of the model description paper:
+- **Gridded output on regular met grids**: deposits were offset by
+  (met spacing / output spacing − 1) cells.  ETEX (0.1° output on 0.25° ERA5, 72 h,
+  n = 2629): RANK 2.76 → 2.26, entirely from station 8021, 20 km from the release
+  (2.64 → 2.67 without it).  CAPTEX (aligned grids) and the station output
+  (`[output.receptors]`) are unchanged.
+- **Surface-layer stability without an archived heat flux** (ERA5_CAPTEX, ERA5_CONV,
+  ERA5_FULL, ERA5_CAPE, used for ETEX and CAPTEX): the Obukhov length now comes from
+  a bulk Richardson number; the surface layer was treated as neutral.  Together with
+  the vertical-placement changes below: ETEX RANK 2.26 → 2.21, CAPTEX 2.43 → 2.47.
+  The conclusions of the paper are unchanged.
+
+Meteorological interfaces:
+- One vertical layout for every reader (heights and vertical velocity on the half
+  levels, the other fields on the full levels between them); the position of each
+  field (staggered or centred u, v, w) is read from the file, checked and logged.
+- Vertical velocity as the coordinate velocity on terrain-following and hybrid levels.
+- WRF: thermodynamic fields, staggered winds, Lambert map factor, time-averaged
+  mass-coupled fluxes (`listvariables/WRFv2_avgflx.vars`).
+- MesoNH, AROME NetCDF: level and wind positions, valid times, grid size from the file.
+- AROME ATMO-HDF: accumulated fluxes, isobaric stitch, vertical velocity from mass
+  continuity (`#info vertical_velocity`).
+- GFS: isobaric levels remapped to a hybrid σ–p coordinate; averaged fields converted
+  to rates.  MERRA-2: edge and mid-layer fields.
+- ERA5 and other GRIB data: accumulation windows and units decided once per met source
+  (`#info sfcflux_units`); η̇ level placement decided from the data
+  (`#info etadot_levels`); `sshf` sign (`ERA5.vars`).
+- Output: `[output.grid] crs` (lonlat or native Lambert); edge cells of the GPU deposit.
+
+Physics:
+- Vertical placement consistent with the readers' layout in the turbulence profiles,
+  the surface-layer wind, convection, dry and wet deposition, boundary inflow and
+  domain fill.
+- Wet deposition independent of the convective mass flux.
+- Turbulence step kept inside the model column.
+
+Other: download time limits for large files (MERRA-2); default kernel width of the
+pairwise mixing on regular grids.
+
+Configuration: on km-scale grids use synchronisation steps of a few minutes
+(`docs/CONFIG.md`); the AROME configurations use 5 min.
+
 ## 2026-09-23 — pre-release review fixes
 
 - **Web GUI security.** The server binds to `127.0.0.1` (override with `EASLEE_GUI_HOST`);

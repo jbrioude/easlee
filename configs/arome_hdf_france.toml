@@ -19,7 +19,7 @@ variables = "AROME_HDF"
 direction = "forward"
 start     = 2025-09-04T04:00:00.000Z
 stop      = 2025-09-04T07:00:00.000Z
-timestep  = "15min"
+timestep  = "5min"                   # km-scale grid: a few minutes (docs/CONFIG.md, synchronisation step)
 
 [physics]
 ctl   = 5.0
