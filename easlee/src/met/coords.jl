@@ -36,8 +36,8 @@ end
     xout = indx * g.coeffx + g.offsetx
     if g.globalx
         xper = 360.0f0 * g.coeffx / g.dlon        # one lon wrap in xout units
-        xout < 0.5f0 && (xout += xper)
-        xout - xper >= 0.5f0 && (xout -= xper)
+        xout < 1.0f0 && (xout += xper)              # cells start at xout = 1 (2026-10-13)
+        xout - xper >= 1.0f0 && (xout -= xper)
     end
     return xout
 end
@@ -152,11 +152,77 @@ function indyindxtolatlon(g::Lambert, j, i)
     return lat, lon
 end
 
-@inline dxtodindx(g::Lambert, dx, indx, indy) = dx / g.dx
-@inline dytodindy(g::Lambert, dy, indx, indy) = dy / g.dy
+# Float32, type-stable twin of indyindxtolatlon(::Lambert) for the output
+# mapping, which runs inside the KernelAbstractions deposit: the Float64 version
+# returns a Float32 lon on the pole branch and Float64 otherwise (a Union in a
+# GPU kernel) and computes in FP64 (slow or unavailable on GPU backends).
+# Same construction; ~1e-5 deg precision, far below any output cell.
+@inline function _lambert_latlon32(g::Lambert, j, i)
+    hemi = g.proj_hemi
+    inew = hemi == -1.0f0 ? 2.0f0 - Float32(i) : Float32(i)
+    jnew = hemi == -1.0f0 ? 2.0f0 - Float32(j) : Float32(j)
+    xx = inew - g.proj_polei
+    yy = g.proj_polej - jnew
+    r2 = xx * xx + yy * yy
+    r2 == 0.0f0 && return hemi * 90.0f0, g.proj_stdlon
+    r  = sqrt(r2) / g.proj_rebydx
+    n  = g.proj_cone
+    lon = g.proj_stdlon + (180.0f0 / Float32(π)) * atan(hemi * xx, yy) / n
+    lon = mod(lon + 360.0f0, 360.0f0)
+    chi1 = (90.0f0 - hemi * g.proj_truelat1) * (Float32(π) / 180.0f0)
+    chi2 = (90.0f0 - hemi * g.proj_truelat2) * (Float32(π) / 180.0f0)
+    chi  = chi1 == chi2 ?
+        2.0f0 * atan((r / tan(chi1))^(1.0f0 / n) * tan(chi1 / 2.0f0)) :
+        2.0f0 * atan((r * n / sin(chi1))^(1.0f0 / n) * tan(chi1 / 2.0f0))
+    return (90.0f0 - chi * (180.0f0 / Float32(π))) * hemi, lon
+end
 
-@inline indxtoxout(g::Lambert, indx, indy) = indx * g.coeffx + g.offsetx
-@inline indytoyout(g::Lambert, indx, indy) = indy * g.coeffy + g.offsety
+"""
+    lambert_mapfac(g::Lambert, indx, indy) -> m
+
+Map scale factor of the Lambert conformal grid at a grid position: a grid step
+covers DX/m on the ground.  With r the projected distance from the pole in
+Earth radii and chi the colatitude (same construction as indyindxtolatlon),
+m = n·r / sin(chi), n = proj_cone; m = 1 on the true latitude(s), < 1 between
+two true latitudes, > 1 outside.  GPU-safe (Float32 arithmetic, no allocation).
+
+Displacements used dx / DX until 2026-10-13, i.e. m = 1 everywhere: WRF winds
+are physical m/s, so parcels moved by the factor m too slow or too fast
+(-4 % at 45 N on a 30/60 N secant grid, and more towards the domain edges).
+"""
+@inline function lambert_mapfac(g::Lambert, indx, indy)
+    i = Float32(indx); j = Float32(indy)
+    inew = g.proj_hemi == -1 ? 2.0f0 - i : i
+    jnew = g.proj_hemi == -1 ? 2.0f0 - j : j
+    xx = inew - g.proj_polei
+    yy = g.proj_polej - jnew
+    r  = sqrt(xx * xx + yy * yy) / g.proj_rebydx
+    r > 0.0f0 || return 1.0f0
+    n    = g.proj_cone
+    chi1 = (90.0f0 - g.proj_hemi * g.proj_truelat1) * Float32(π) / 180.0f0
+    chi2 = (90.0f0 - g.proj_hemi * g.proj_truelat2) * Float32(π) / 180.0f0
+    chi  = chi1 == chi2 ?
+        2.0f0 * atan((r / tan(chi1))^(1.0f0 / n) * tan(chi1 / 2.0f0)) :
+        2.0f0 * atan((r * n / sin(chi1))^(1.0f0 / n) * tan(chi1 / 2.0f0))
+    return n * r / sin(chi)
+end
+
+@inline dxtodindx(g::Lambert, dx, indx, indy) = dx * lambert_mapfac(g, indx, indy) / g.dx
+@inline dytodindy(g::Lambert, dy, indx, indy) = dy * lambert_mapfac(g, indx, indy) / g.dy
+
+# Output grid on a Lambert nest ([output.grid].crs): geographic → through the
+# parcel's lon/lat, coeffx = 1/dxout [1/deg], offsetx = lon0 [deg]; native →
+# linear in projection metres.  Cell ii spans xout ∈ [ii, ii+1) either way.
+@inline function indxtoxout(g::Lambert, indx, indy)
+    g.geoout || return indx * g.coeffx + g.offsetx          # crs = "native" (metres)
+    _, lon = _lambert_latlon32(g, indy, indx)
+    return mod(lon - g.offsetx, 360.0f0) * g.coeffx + 1.0f0
+end
+@inline function indytoyout(g::Lambert, indx, indy)
+    g.geoout || return indy * g.coeffy + g.offsety
+    lat, _ = _lambert_latlon32(g, indy, indx)
+    return (lat - g.offsety) * g.coeffy + 1.0f0
+end
 
 # Mercator (MesoNH conformal RPK = 0) ─────────────────────────────────────────
 # Map y = R·cos(lat0)·ln(tan(π/4 + lat/2)); lon is linear in x.
@@ -191,18 +257,18 @@ end
     return dy * (g.coslat0 / cosd(lat)) / g.dy
 end
 
-# Output-grid mapping: exact lon/lat → fractional OUTGRID coordinate, with the
-# same +one-grid-spacing offset convention as the Rectilinear formulas.
+# Output-grid mapping: exact lon/lat → fractional OUTGRID coordinate, cell ii
+# spanning [ii, ii+1).  The "+ one met grid spacing" this used to add copied
+# the Rectilinear offset error (fixed 2026-10-13): it shifted deposits by
+# (met spacing / output spacing − 1) cells.
 @inline function indxtoxout(g::Mercator, indx, indy)
     _, lon = indyindxtolatlon(g, indy, indx)
-    dlon_or = g.dx / (_MERC_R * g.coslat0) * (180.0f0/Float32(π))
-    return (lon - g.lon0out + dlon_or) / g.dxout
+    return (lon - g.lon0out) / g.dxout + 1.0f0
 end
 
 @inline function indytoyout(g::Mercator, indx, indy)
     lat, _ = indyindxtolatlon(g, indy, indx)
-    dlat_loc = g.dy * cosd(lat) / (_MERC_R * g.coslat0) * (180.0f0/Float32(π))
-    return (lat - g.lat0out + dlat_loc) / g.dyout
+    return (lat - g.lat0out) / g.dyout + 1.0f0
 end
 
 # ── Vertical coordinate transform ────────────────────────────────────────────

@@ -966,6 +966,18 @@ function validate_runspec(s::RunSpec; check_paths::Bool=true)
     s.output.quantity in ("concentration","mixing_ratio","both") ||
         push!(errs, "output.quantity must be concentration|mixing_ratio|both")
     g = s.output.grid
+    # degree values that cannot be degrees are projection metres given without
+    # crs = "native" (the WRF/AROME confusion): say so instead of producing
+    # negative cell areas or an empty grid (2026-10-13).  Only values that are
+    # clearly not degrees are refused: a pole-centred global grid legitimately
+    # has its last row half a cell past 90° (configs/merra2.toml: lat0 = −90,
+    # dy = 0.5, ny = 361).
+    if g.crs == "lonlat"
+        (g.dx > 0 && g.dy > 0 && g.dx <= 360 && g.dy <= 180 && abs(g.lat0) <= 90 + g.dy) ||
+            push!(errs, "output.grid (crs = \"lonlat\") is not a longitude/latitude box: lat0=$(g.lat0), " *
+                        "dy=$(g.dy), ny=$(g.ny), dx=$(g.dx), nx=$(g.nx) — if these are projection metres " *
+                        "of a Lambert nest (WRF, AROME), set [output.grid] crs = \"native\"")
+    end
     g.crs in ("lonlat","native") ||
         push!(errs, "output.grid.crs must be lonlat|native")
     g.vkind in ("height_agl","pressure","model_level","theta") ||

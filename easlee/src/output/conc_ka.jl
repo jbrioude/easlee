@@ -58,7 +58,9 @@ using Atomix
         xout ::Float32 = indxtoxout(gridconfig, indx, indy)
         yout ::Float32 = indytoyout(gridconfig, indx, indy)
 
-        if 1.0f0 <= xout <= Float32(Niout) && 1.0f0 <= yout <= Float32(Njout) &&
+        # cell ii spans [ii, ii+1): accept xout ∈ [1, Niout+1) like the CPU path
+        # (2026-10-13: "xout <= Niout" dropped almost all of the last column/row)
+        if 1.0f0 <= xout < Float32(Niout + 1) && 1.0f0 <= yout < Float32(Njout + 1) &&
            zout >= 0.0f0
 
             l = find_out_layer(zout, zi)

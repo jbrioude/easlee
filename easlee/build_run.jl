@@ -17,7 +17,8 @@ using Serialization: serialize, deserialize   # warm-start checkpoints
 
 # Everything step_model! needs beyond (state, ctx, date), assembled from the spec.
 mutable struct RunObjects
-    convfields::Any        # Vector{ConvFields|nothing} or nothing
+    convfields::Any        # Vector{ConvFields|nothing} or nothing — convection (needs umf)
+    wetfields::Any         # Vector{ConvFields|nothing} or nothing — wet deposition (needs tpf)
     diagconv::Any          # Vector{DiagConvFields|nothing} or nothing
     diagconvparams::Any
     wetdepparams::Any      # WetDepParams or nothing  (bulk gas scheme)
@@ -50,6 +51,7 @@ end
 function step_kwargs(obj::RunObjects)
     kw = Dict{Symbol,Any}()
     obj.convfields  !== nothing && (kw[:convfields]  = obj.convfields)
+    obj.wetfields   !== nothing && (kw[:wetfields]   = obj.wetfields)
     obj.diagconv    !== nothing && (kw[:diagconv]    = obj.diagconv;
                                     kw[:diagconvparams] = obj.diagconvparams)
     obj.wetdepparams!== nothing && (kw[:wetdepparams]= obj.wetdepparams;
@@ -397,11 +399,10 @@ function _write_outgrid(io, g)
     # still bin by height-AGL and infer the horizontal CRS from the met projection).
     g.vkind == "height_agl" ||
         @warn "output.grid.vertical.kind=\"$(g.vkind)\" is parsed but the runtime still bins by height_agl (TODO)"
-    # review 2026-09-04 A7 item 6: crs/nest are parsed and validated but the runtime ignores them
-    g.crs == "lonlat" ||
-        @warn "output.grid.crs=\"$(g.crs)\" is parsed but IGNORED: the runtime output grid is always lon/lat (lon0/lat0/dx/dy in degrees)"
-    g.nest == 1 ||
-        @warn "output.grid.nest=$(g.nest) is parsed but IGNORED: the output grid is not tied to a nest projection"
+    # crs is honoured by initoutgrid/initgridconfig since 2026-10-13 (lonlat, or
+    # native metres of a single Lambert nest); a native grid on another nest is not
+    g.crs == "native" && g.nest != 1 &&
+        error("output.grid.nest = $(g.nest): a native output grid is supported on nest 1 only")
     println(io, "&OUTGRID")
     println(io, " OUTLON0= ", g.lon0, ",");  println(io, " OUTLAT0= ", g.lat0, ",")
     println(io, " NUMXGRID= ", g.nx, ",");   println(io, " NUMYGRID= ", g.ny, ",")
@@ -836,7 +837,8 @@ function _resolve_available(m::EasleeConfig.MetSource, workdir::AbstractString, 
     avail = joinpath(workdir, "AVAILABLE_$(idx)")
     cached = joinpath(m.path, AVAILABLE_INDEX_NAME)
     if m.available == "auto" && isfile(cached)
-        ok, why = cached_available_ok(cached, m.path; include_only=include_only, exclude=exclude)
+        ok, why = cached_available_ok(cached, m.path; include_only=include_only, exclude=exclude,
+                                      model=m.model)
         if ok
             copy_available_with_vars(cached, avail, varsfile)
             @info "using the pre-generated AVAILABLE of $(m.model) ($why)" path=cached
@@ -1280,10 +1282,24 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
     conv = spec.physics.convection
     wet_any = spec.physics.deposition.wet || any(sp -> sp.wet_deposition, spec.species)
 
-    convfields = nothing; diagconv = nothing; diagconvparams = nothing
-    if conv.scheme == "massflux" || wet_any
+    # Convection and wet deposition are built separately (2026-10-13).  Before,
+    # one ConvFields served both and was built whenever wet deposition was on:
+    # wet deposition then vanished without umf (GFS, WRF, AROME, MesoNH), and the
+    # mass-flux convection ran even with scheme = "none" — or replaced the "cape"
+    # scheme, whose branch the time loop never reached — as soon as wet
+    # deposition was requested on a dataset carrying umf.
+    convfields = nothing; wetfields = nothing; diagconv = nothing; diagconvparams = nothing
+    if conv.scheme == "massflux"
         convfields = [EASLEE.ConvFields(rt.metfields3D[n]) for n in 1:rt.nest]
         all(c -> c === nothing, convfields) && (convfields = nothing)
+        convfields === nothing &&
+            @warn "convection scheme = \"massflux\" but the meteorology carries no updraft mass flux (umf): convection is OFF"
+    end
+    if wet_any
+        wetfields = [EASLEE.ConvFields(rt.metfields3D[n]; require = :wetdep) for n in 1:rt.nest]
+        all(c -> c === nothing, wetfields) && (wetfields = nothing)
+        wetfields === nothing &&
+            @warn "wet deposition requested but the meteorology carries no precipitation flux (tpf): wet deposition is OFF"
     end
     if conv.scheme == "cape"
         # 3-D dict passed too: archived qv (when mapped) feeds the source-parcel θe
@@ -1298,7 +1314,7 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
     # AerosolModel; gas species use the bulk WetDepParams.
     wetdepparams = nothing; wetdepstate = nothing
     gas_wet = spec.physics.deposition.wet || any(sp -> sp.wet_deposition && sp.kind == "gas", spec.species)
-    if gas_wet && convfields !== nothing
+    if gas_wet && wetfields !== nothing
         # review 2026-09-04 A6: the bulk gas scheme used to be switched off whenever an aerosol
         # species was present (it had no per-box mask and would have scavenged the aerosol boxes a
         # second time).  WetDepParams.boxon now restricts it to the gas boxes that asked for it.
@@ -1669,7 +1685,7 @@ function build_run(spec::EasleeConfig.RunSpec; prefetch::Bool=true,
         end
     end
 
-    obj = RunObjects(convfields, diagconv, diagconvparams,
+    obj = RunObjects(convfields, wetfields, diagconv, diagconvparams,
                      wetdepparams, wetdepstate, aerosol, hybridvert, bench,
                      chemstate, chemcfg, chembg, cheminit, chemtl, chemcc, chemqv,
                      spphys, icephys, ssprays, dusts, convphys, pradphys, tagphys, lightning,

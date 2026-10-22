@@ -35,7 +35,7 @@ function to_typed_grid(g, globalx::Bool)
             g.proj_hemi, g.proj_cone, g.proj_polei, g.proj_polej, g.proj_rebydx,
             g.coeffx, g.offsetx, g.coeffy, g.offsety,
             g.Uedge, g.Vedge, g.Wedge,
-            globalx,
+            globalx, g.geoout,
         )
     elseif name == "Rectilinear"
         return Rectilinear(

@@ -69,6 +69,10 @@ end
 @inline _xcos(g::Rectilinear, indy) =
     max(cosd(Float64(g.latmin) + (Float64(indy) - 1.0) * Float64(g.dlat)), 0.05)
 @inline _xcos(g, indy) = 1.0
+# output-cell lon convergence at the parcel (needs indx on a Lambert nest)
+@inline _xcos_out(g, indy, indx) = _xcos(g, indy)
+@inline _xcos_out(g::Lambert, indy, indx) = g.geoout ?
+    max(cosd(Float64(_lambert_latlon32(g, indy, indx)[1])), 0.05) : 1.0
 
 # OUTPUT-grid cell size in metres: one output index = 1/coeff met indices
 # (indxtoxout: xout = indx·coeffx + offsetx).  Mercator maps through lon/lat
@@ -76,8 +80,11 @@ end
 # adaptive kernel is validated on Rectilinear/Lambert).
 _out_cell_m(g::Rectilinear) = ((a, b) = _out_spacing_m(g);
                                      (a / Float64(g.coeffx), b / Float64(g.coeffy)))
-_out_cell_m(g::Lambert)     = ((a, b) = _out_spacing_m(g);
-                                     (a / Float64(g.coeffx), b / Float64(g.coeffy)))
+# Lambert nest: geographic output → one output cell = 1/coeffx degrees (the
+# EQUATOR size, lon convergence per parcel by _xcos_out); native → metres
+_out_cell_m(g::Lambert)     = g.geoout ?
+    (6.371e6 * π / 180 / Float64(g.coeffx), 6.371e6 * π / 180 / Float64(g.coeffy)) :
+    ((a, b) = _out_spacing_m(g); (a / Float64(g.coeffx), b / Float64(g.coeffy)))
 _out_cell_m(g)                    = _out_spacing_m(g)
 
 # Physical bandwidth floor (relative dispersion): the kNN hband measures the
@@ -457,7 +464,7 @@ function _conc_nest!(
             end
             # metres → output-cell units, with the lon convergence at the
             # parcel's own latitude (dxo is the EQUATOR cell size)
-            sx = sxm / (dxo * _xcos(gconfig, indy));  sy = sym / dyo
+            sx = sxm / (dxo * _xcos_out(gconfig, indy, indx));  sy = sym / dyo
             xf = Float64(xout); yf = Float64(yout)
             # Support = ±3σ, but HARD-CAPPED at ±32 cells per axis.  Without
             # the cap, sparse-tail parcels (h ≫ cell) touch up to 256×256

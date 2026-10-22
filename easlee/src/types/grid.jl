@@ -49,6 +49,9 @@ struct Lambert <: AbstractGrid
     Vedge::Bool
     Wedge::Bool
     globalx::Bool
+    # output grid: true = geographic (lon0/lat0/dx/dy in degrees, parcels mapped
+    # through lon/lat), false = native projection metres ([output.grid].crs)
+    geoout::Bool
 end
 
 # Mercator projection (MesoNH conformal with RPK = 0).
