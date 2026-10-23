@@ -5,7 +5,7 @@
 The interfaces to the meteorological models were verified on real data with tests
 that do not depend on observations (hydrostatic and kinematic consistency, the
 well-mixed criterion on real fields, the position of each field in the files),
-following points reported by Yue Huang on the WRF interface.  The tests are in
+following points reported by Yue Jia on the WRF interface.  The tests are in
 `validation/`.
 
 Changes to the ERA5 results of the model description paper:
@@ -429,7 +429,7 @@ in the developer tree.
 
 ## 2026-10-02 — vertical velocity to level rate was four times too small (WRF, AROME)
 
-Reported by **Yue Huang**, who spotted it in the WRF reader.  It was in the
+Reported by **Yue Jia**, who spotted it in the WRF reader.  It was in the
 AROME reader as well.
 
 A vertical velocity in m/s becomes a level-index rate by dividing by the LOCAL

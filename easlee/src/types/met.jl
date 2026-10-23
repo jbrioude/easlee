@@ -83,7 +83,7 @@ end
 # umf: until 2026-10-13 it did (one constructor for both), which switched wet
 # deposition off silently on every dataset without a convective mass flux —
 # GFS among them, whose reader builds tpf from the surface precipitation rate
-# (reported by Yue Huang).
+# (reported by Yue Jia).
 function ConvFields(d::AbstractDict; require::Symbol = :convection)
     require in (:convection, :wetdep) || throw(ArgumentError("require = :convection | :wetdep"))
     key = require === :convection ? "umf" : "tpf"

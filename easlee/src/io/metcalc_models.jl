@@ -410,7 +410,7 @@ function _terrain_following_levdot_stacked_cgrid!(metconfig, lev, zl, zs::Abstra
 end
 
 # ── WRF (NetCDF wrfout, Arakawa-C grid, terrain-following eta) ───────────────
-# Rewritten 2026-10-13 (reported by Yue Huang; see CHANGES.md).  The previous
+# Rewritten 2026-10-13 (reported by Yue Jia; see CHANGES.md).  The previous
 # path (checkmetfields!) wrote only rho back: T stayed WRF's perturbation
 # potential temperature θ' = θ − 300 K, theta stayed zero, puv was never
 # filled; heights were the eta INTERFACES while T, p, u, v are on the mass

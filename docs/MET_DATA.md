@@ -156,7 +156,7 @@ each dataset are in `configs/`.
 
 ### WRF (`wrfout`), `listvariables/WRFv2.vars`
 Reader `metwrffieldcalculation!` (`io/metcalc_models.jl`, rewritten 2026-10-13
-after Yue Huang's report — the previous path filled only rho).
+after Yue Jia's report — the previous path filled only rho).
 - **Grid**: Lambert conformal (MAP_PROJ = 1).  Displacements include the map
   factor (`lambert_mapfac`); winds stay grid-relative (U, V along the grid axes).
 - **Vertical**: a surface slot (PSFC, T2, U10/V10) under the mass levels, each
@@ -254,7 +254,7 @@ The Obukhov length L = −ρ·cp·T·u*³/(κ·g·H) needs H positive UPWARD (a 
 surface gives L < 0).  ECMWF archives `sshf` positive DOWNWARD (−236 W/m² at
 noon over the Sahara in a flex_extract ERA5 file), and the hybrid-GRIB path used
 it raw: every daytime surface layer was stable and the derived pblh had an
-inverted diurnal cycle (reported by Yue Huang).  The derivation now flips it
+inverted diurnal cycle (reported by Yue Jia).  The derivation now flips it
 (`#info sshf_positive = down`, the default on that path; `up` for a dataset
 already positive upward) and logs the median L over heating and cooling cells
 once per run.  GFS `avg_ishf`, WRF `HFX` and AROME-HDF (flipped on read) are

@@ -969,7 +969,7 @@ function initarrays(metconfig,gridconfig,levelconfig)
    _Nj = size(_ref, 2)
    _Nk = Nk
    # puv: pressure, derived by the WRF reader (2026-10-13: WRF.vars/WRFv2.vars do
-   # not list it, so MetFields3D got a zero array — reported by Yue Huang)
+   # not list it, so MetFields3D got a zero array — reported by Yue Jia)
    for name in ("drhodz", "dsigwdz", "tke", "tls", "theta", "puv", "rho")
        if !haskey(metfields3D, name)
            metfields3D[name] = zeros(Float32, _Ni, _Nj, _Nk, 2)
@@ -1801,7 +1801,7 @@ The local spacing of level k is the CENTRED half span, (z[k+1] - z[k-1]) / 2, so
 the conversion divides by that, not by the full two-level span.  Writing it as
 `w / (z[k+1] - z[k-1]) / 2` gives a rate four times too small, because `/` is
 left-associative in Julia and the 2 then divides the result instead of the
-spacing.  That is the shape of the bug Yue Huang reported in the WRF reader on
+spacing.  That is the shape of the bug Yue Jia reported in the WRF reader on
 2026-10-02, present in the AROME reader too.
 
 A centred DERIVATIVE on the same stencil (drho/dz, dsigw/dz) divides by the full
@@ -2423,7 +2423,7 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
        # then to the upward convention: ECMWF archives sshf positive DOWNWARD
        # (#info sshf_positive, default "down").  Until 2026-10-13 the raw ECMWF
        # value was used, which made every daytime surface layer stable and every
-       # night unstable (reported by Yue Huang); pblh, derived from L below,
+       # night unstable (reported by Yue Jia); pblh, derived from L below,
        # inherited the inverted diurnal cycle.
        sgn_up  = get(metconfig, "sshf_positive", "down") == "down" ? -1.0f0 : 1.0f0
        H_flux  = sgn_up .* metfields2D["sshf"][:,:,indt] ./ div_sshf   # W/m², positive upward
