@@ -78,7 +78,7 @@ julia --project=easlee test/runtests.jl                     # 45 tests, no data 
 
 ## Authors and acknowledgements
 
-EASLEE was written by **Jérôme Brioude**, with contributions from **Rémi Augerai**. The co-authors of the model description paper are warmly thanked for the discussions that shaped the model and for testing it on real cases.
+EASLEE was written by **Jérôme Brioude**, with contributions from **Rémi Augerai** and **Yue Jia**. The co-authors of the model description paper are warmly thanked for the discussions that shaped the model and for testing it on real cases.
 
 The reader is referred to Stohl et al. (2005) for the physics and numerics inherited from FLEXPART.
 
