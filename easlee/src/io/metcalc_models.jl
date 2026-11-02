@@ -204,7 +204,12 @@ end
 
 # Boundary-layer height from the bulk Richardson number profile (Troen &
 # Mahrt 1986; Ri_c = 0.25 — the same diagnostic the IFS uses for blh):
-# lowest height where Rib(z) = g·z·(θv(z)−θv_sfc) / (θv_sfc·|ΔU|²) crosses Ri_c.
+# lowest height where Rib(z) = g·z·(θv(z)−θv_sfc) / (θv_sfc·|U(z)|²) crosses Ri_c.
+# The shear is taken from the SURFACE, where the wind is zero (Vogelezang &
+# Holtslag 1996; Seidel et al. 2012; the GFS PBL scheme).  Until 2026-11-02 it
+# was U(z) − U(lowest level): on GFS isobaric data (lowest full level ≈ 107 m)
+# that drops the shear below it, and pblh came out 4× below GFS's own hpbl over
+# the sea (medians 175 vs 734 m; 722 m with the surface reference).
 function _pblh_from_rib!(metfields3D, metfields2D, indt, Ni, Nj, Nk)
    th = metfields3D["theta"]; u = metfields3D["Ux"]; v = metfields3D["Vy"]
    zl = metfields3D["zlev"]
@@ -221,7 +226,7 @@ function _pblh_from_rib!(metfields3D, metfields2D, indt, Ni, Nj, Nk)
          for k in 3:Nk
             z = 0.5f0 * (zl[i,j,k-1,indt] + zl[i,j,k,indt])
             thv = th[i,j,k,indt] * (qv === nothing ? 1.0f0 : 1.0f0 + 0.61f0 * max(qv[i,j,k,indt], 0.0f0))
-            du2 = (u[i,j,k,indt] - u[i,j,2,indt])^2 + (v[i,j,k,indt] - v[i,j,2,indt])^2 + 0.1f0
+            du2 = u[i,j,k,indt]^2 + v[i,j,k,indt]^2 + 0.1f0
             rib = _G0 * z * (thv - thvs) / (max(thvs, 200.0f0) * du2)
             if rib >= Ric
                # interpolate the crossing between the previous level and here

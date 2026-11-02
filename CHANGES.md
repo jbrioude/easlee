@@ -1,5 +1,17 @@
 # EASLEE transport distribution — changes
 
+## Unreleased
+
+- **Boundary-layer height derived from the bulk Richardson number** (readers
+  without an archived PBL height: GFS; MERRA-2 and AROME when none is given): the
+  wind shear is now taken from the surface, where the wind is zero, instead of
+  from the lowest level.  On GFS isobaric data the lowest level is ~107 m and the
+  PBL height came out ~4x below GFS's own value over the sea.  GFS 0.25°,
+  2026-06-03 06 UTC, medians: sea 175 → 722 m (GFS 734 m), land 142 → 400 m
+  (GFS 430 m).  The well-mixed criterion on GFS still holds (4 h, 2M parcels,
+  within 5.4 % below 100 m, 1.2 % above).  ERA5, WRF and AROME-HDF read an
+  archived PBL height and are unchanged.
+
 ## v1.1.1 (2026-10-22) — verified meteorological interfaces
 
 The interfaces to the meteorological models were verified on real data with tests
