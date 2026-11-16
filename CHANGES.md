@@ -1,6 +1,24 @@
 # EASLEE transport distribution — changes
 
-## Unreleased
+## v1.1.3 (2026-11-16) — surface sensible heat flux on the ETEX and CAPTEX cases
+
+- **Obukhov length.** It comes from the surface sensible heat flux when the
+  variables file maps one (`sshf`), and from the surface-layer bulk Richardson
+  number otherwise.  `listvariables/ERA5_CAPTEX.vars`, used for ETEX-1 and CAPTEX,
+  now maps `sshf` (ERA5 parameter 146, hourly accumulation, in the `IFS_SFC_*`
+  files).
+- **Heat flux mapped but absent from the files**: the reader switches to the
+  bulk Richardson number and says so in a warning ("surface heat flux 'sshf' is
+  mapped in the variables file but absent from the meteorological files").  The
+  result is then the one of v1.1.2.
+- **Scores with the heat flux** (`docs/ETEX_RESULTS.md`, `docs/CAPTEX_RESULTS.md`).
+  ETEX-1 (72 h, n = 2629): RANK 2.19, and 2.70 without station 8021; v1.1.2 gave
+  2.20 and 2.69, a difference within the spread between repeated runs.  CAPTEX,
+  three-day runs (n = 2612): RANK 2.47 → 2.55, the pooled fractional bias going
+  from +0.18 to 0.00; with the four-day release 5 of the preprint (n = 2897) the
+  RANK is 2.48 in both versions.
+
+## v1.1.2 (2026-11-16) — boundary-layer height from the bulk Richardson number
 
 - **Boundary-layer height derived from the bulk Richardson number** (readers
   without an archived PBL height: GFS; MERRA-2 and AROME when none is given): the

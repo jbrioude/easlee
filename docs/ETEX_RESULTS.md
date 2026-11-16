@@ -23,7 +23,7 @@ included) and scored with the ATMES-II statistics, summarised by
 
 ## Reference run (uniform kernel, 72 h)
 
-Scores of v1.1.2. They replace those of the model description preprint
+Scores of v1.1.3. They replace those of the model description preprint
 (RANK 2.76), which were computed before two corrections listed in `CHANGES.md`:
 the position of the gridded deposits on a regular meteorological grid, and the
 surface-layer stability, which now follows the ERA5 surface sensible heat flux.

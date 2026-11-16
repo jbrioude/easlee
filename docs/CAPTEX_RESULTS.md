@@ -16,7 +16,7 @@ included, summarised by the composite rank of Draxler et al. (2001),
 
 ## Results per release and pooled
 
-Scores of v1.1.2. The model description preprint gave a pooled RANK of
+Scores of v1.1.3. The model description preprint gave a pooled RANK of
 2.43; the change comes from the surface-layer stability, which now follows the
 ERA5 surface sensible heat flux.
 

@@ -2444,7 +2444,13 @@ function metgribfieldcalculation!(globalx::Bool,metconfig,metfields3D,metfields2
        # w* = 0 everywhere, i.e. neutral turbulence on every such run (ETEX, CAPTEX).
        _ol_bulk_richardson!(metfields3D, metfields2D, indt, Ni, Nj)
        has_ol = true
-       @warn "no surface heat flux mapped: Obukhov length from the surface-layer bulk Richardson number" maxlog=1
+       # (v1.1.3) sshf mapped in the variables file but absent from the files
+       # (or all zero in this slot) lands here too: say so, the two cases differ
+       if haskey(metfields2D, "sshf")
+           @warn "surface heat flux 'sshf' is mapped in the variables file but absent from the meteorological files: Obukhov length from the surface-layer bulk Richardson number instead" maxlog=1
+       else
+           @warn "no surface heat flux mapped: Obukhov length from the surface-layer bulk Richardson number" maxlog=1
+       end
        _log_ol_rib(metfields2D, indt)
    end
 
