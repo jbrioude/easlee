@@ -26,30 +26,28 @@ included) and scored with the ATMES-II statistics, summarised by
 Scores of v1.1.2. They replace those of the model description preprint
 (RANK 2.76), which were computed before two corrections listed in `CHANGES.md`:
 the position of the gridded deposits on a regular meteorological grid, and the
-surface-layer stability when no heat flux is archived.
+surface-layer stability, which now follows the ERA5 surface sensible heat flux.
 
 | statistic | all stations (n = 2629) | without station 8021 (n = 2607) | ideal |
 |---|---:|---:|---:|
 | observed mean | 109.2 pg m⁻³ | 99.2 pg m⁻³ | |
-| model mean | 421.5 pg m⁻³ | 93.4 pg m⁻³ | obs. |
-| FB | +1.18 | −0.06 | 0 |
+| model mean | 425.6 pg m⁻³ | 96.4 pg m⁻³ | obs. |
+| FB | +1.18 | −0.03 | 0 |
 | FA2 | 0.34 | 0.35 | 1 |
-| FA5 | 0.68 | 0.68 | 1 |
-| R (per window) | 0.56 | 0.48 | 1 |
-| FMS | 57.1 % | 57.3 % | 100 % |
-| KSP | 8.6 % | 8.6 % | 0 % |
-| **RANK** | **2.20** | **2.69** | 4 |
+| FA5 | 0.69 | 0.69 | 1 |
+| R (per window) | 0.56 | 0.49 | 1 |
+| FMS | 56.2 % | 56.3 % | 100 % |
+| KSP | 9.1 % | 9.1 % | 0 % |
+| **RANK** | **2.19** | **2.70** | 4 |
 
-The parcels are drawn at random, so two runs are not identical. Five runs of
-this configuration give RANK 2.20, 2.20, 2.20, 2.20 and 2.21 on all stations and
-2.68, 2.69, 2.69, 2.69 and 2.70 without station 8021; the table is the run at
-the centre of that spread.
+The parcels are drawn at random, so two runs are not identical: the RANK of
+repeated runs of this configuration varies by about 0.01.
 
 **Station 8021** (20 km from the release, 22 of the 2629 pairs) carries
 the whole difference between the two columns. Its observed mean is about
 1300 pg m⁻³ and the model gives about 39 000 pg m⁻³ there, thirty times more.
 With it the pooled bias, correlation and NMSE describe that one station; without
-it the model mean is within 6 % of the observed mean. The plume footprint (FMS)
+it the model mean is within 3 % of the observed mean. The plume footprint (FMS)
 and the concentration distribution (KSP) do not depend on it. In the preprint the
 deposits were shifted by 1.5 cells of the 0.1° grid, which moved the near-source
 filament off this station and hid the over-prediction (RANK 2.76 with it,
@@ -93,7 +91,7 @@ RANK of the 72 h run, 4 × 10⁵ parcels:
 
 | estimator | all stations | model mean | without 8021 | model mean |
 |---|---:|---:|---:|---:|
-| grid, uniform kernel (5 runs) | 2.20–2.21 | 422–424 | 2.68–2.70 | 93–95 |
+| grid, uniform kernel | 2.19 | 426 | 2.70 | 96 |
 | grid, adaptive kernel (1 run) | 2.23 | 436 | 2.70 | 93 |
 | gridless receptors (5 runs) | 1.83–2.10 | 554–4066 | 2.64–2.70 | 87–103 |
 

@@ -17,30 +17,30 @@ included, summarised by the composite rank of Draxler et al. (2001),
 ## Results per release and pooled
 
 Scores of v1.1.2. The model description preprint gave a pooled RANK of
-2.43; the change comes from the surface-layer stability correction listed in
-`CHANGES.md` (the Obukhov length when no heat flux is archived).
+2.43; the change comes from the surface-layer stability, which now follows the
+ERA5 surface sensible heat flux.
 
 | release | N | R | FB | FA2 | FMS % | KSP % | RANK |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 395 | 0.379 | +0.65 | 0.24 | 51.0 | 10.4 | 2.23 |
-| 2 | 400 | 0.839 | −0.19 | 0.26 | 69.4 | 18.0 | 3.13 |
-| 3 | 404 | 0.608 | +1.31 | 0.10 | 35.8 | 9.4 | 1.98 |
-| 4 | 367 | 0.581 | +0.40 | 0.23 | 55.0 | 7.9 | 2.61 |
-| 5 | 368 | 0.920 | +0.34 | 0.40 | 29.4 | 13.3 | 2.84 |
-| 6 | 390 | −0.036 | −1.72 | 0.18 | 8.8 | 5.6 | 1.17 |
-| 7 | 288 | 0.131 | +0.05 | 0.12 | 32.4 | 6.9 | 2.25 |
-| **pooled** | **2612** | **0.459** | **+0.18** | **0.23** | **43.9** | **9.4** | **2.47** |
+| 1 | 395 | 0.405 | +0.48 | 0.30 | 51.4 | 10.1 | 2.33 |
+| 2 | 400 | 0.827 | −0.45 | 0.25 | 67.5 | 19.2 | 2.94 |
+| 3 | 404 | 0.597 | +1.25 | 0.17 | 32.6 | 16.1 | 1.90 |
+| 4 | 367 | 0.645 | +0.20 | 0.23 | 54.1 | 9.0 | 2.77 |
+| 5 | 368 | 0.916 | +0.33 | 0.33 | 32.4 | 13.6 | 2.86 |
+| 6 | 390 | −0.034 | −1.73 | 0.09 | 8.8 | 5.6 | 1.17 |
+| 7 | 288 | 0.109 | −0.22 | 0.12 | 36.1 | 6.2 | 2.20 |
+| **pooled** | **2612** | **0.462** | **−0.00** | **0.24** | **43.1** | **9.0** | **2.55** |
 
-Three runs of this protocol give a pooled RANK of 2.46–2.47. The pooled RANK
+The pooled model mean is 210.3 pg m⁻³ against 211.3 observed. The pooled RANK
 lies within the multi-model CAPTEX range of 2.3–2.8 reported by Hegarty et al.
 (2013) for FLEXPART, HYSPLIT and STILT. On the per-station time-integrated dosage
-(n = 80) the figure of merit in space is 0.96, the correlation 0.67, FA2 0.47,
-FA5 0.77 and FB +0.18.
+(n = 80) the figure of merit in space is 0.95, the correlation 0.66, FA2 0.51,
+FA5 0.79 and FB −0.00.
 
 **Protocol of the preprint.** Table 3 of the preprint pooled the three-day runs
 with a four-day run of release 5 (n = 2897, RANK 2.43). The same protocol now
-gives RANK 2.48 (R 0.45, FB +0.10, FMS 42.4 %, KSP 9.8 %); the four-day release 5
-alone scores 2.35 (n = 653, R 0.65, FB −0.33).
+gives RANK 2.48 (R 0.45, FB −0.09, FMS 41.6 %, KSP 9.4 %); the four-day release 5
+alone scores 2.34 (n = 653, R 0.65, FB −0.34).
 
 **Releases 5, 6 and 7 are not independent.** The seven releases use the same
 tracer, and releases 5 (26 October, Sudbury), 6 (28 October, Dayton, 32 kg) and
@@ -54,7 +54,7 @@ FB +0.18, observed mean 180, model mean 215 pg m⁻³), and pooling this run wit
 releases 1–4 gives RANK 2.46 (n = 2281, R 0.49, FB +0.33, FMS 46.3 %, KSP 8.3 %).
 
 The spread between releases 1 to 4 remains large, as expected for individual
-synoptic cases (RANK 1.98 to 3.13).
+synoptic cases (RANK 1.90 to 2.94).
 
 **Turbulence scheme.** The preprint reported the Hanna scheme within 0.01 of the
 Thomson scheme. That comparison has not been repeated since the corrections.
