@@ -7,51 +7,68 @@ PMCH releases from Dayton, Ohio, and Sudbury, Ontario, in September and October
 **Meteorology.** ERA5 hourly, 1983, hybrid model levels (`IFS_EA`) with the
 surface companion (`IFS_SFC`), regional North-America crop (260–300 °E).
 
-**Configuration.** Forward runs, one per release, 0–20 m AGL release, Thomson
-turbulence, mass-flux convection, 0.25° output grid, 0–100 m surface layer. Each
-release runs for the three days covered by its meteorological archive (four for
-release 5). Scoring follows the ATMES-II / DATEM statistics over every station ×
-sampling window with zeros included, summarised by the composite rank of Draxler
-et al. (2001), `RANK = R² + (1 − |FB|/2) + FMS/100 + (1 − KSP/100)`, range 0–4.
+**Configuration.** Forward runs, one per release, 0–20 m AGL release, 2 × 10⁵
+parcels, Thomson turbulence, mass-flux convection, 0.25° output grid, 0–100 m
+surface layer, three days per release (`RUNDAYS=3`). Scoring follows the
+ATMES-II / DATEM statistics over every station × sampling window with zeros
+included, summarised by the composite rank of Draxler et al. (2001),
+`RANK = R² + (1 − |FB|/2) + FMS/100 + (1 − KSP/100)`, range 0–4.
 
 ## Results per release and pooled
 
+Scores of v1.1.2. The model description preprint gave a pooled RANK of
+2.43; the change comes from the surface-layer stability correction listed in
+`CHANGES.md` (the Obukhov length when no heat flux is archived).
+
 | release | N | R | FB | FA2 | FMS % | KSP % | RANK |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 395 | 0.380 | +0.66 | 0.18 | 50.0 | 11.1 | 2.20 |
-| 2 | 400 | 0.821 | −0.00 | 0.26 | 69.1 | 18.0 | 3.18 |
-| 3 | 404 | 0.665 | +1.35 | 0.13 | 33.7 | 12.6 | 1.98 |
-| 4 | 367 | 0.558 | +0.52 | 0.15 | 54.1 | 7.6 | 2.52 |
-| 5 (4 days) | 653 | 0.653 | −0.36 | 0.33 | 20.7 | 13.5 | 2.32 |
-| 6 | 390 | −0.038 | −1.71 | 0.18 | 8.6 | 6.4 | 1.17 |
-| 7 | 288 | 0.147 | +0.13 | 0.12 | 34.2 | 6.6 | 2.23 |
-| **pooled** | **2897** | **0.462** | **+0.19** | **0.21** | **41.5** | **10.2** | **2.43** |
+| 1 | 395 | 0.379 | +0.65 | 0.24 | 51.0 | 10.4 | 2.23 |
+| 2 | 400 | 0.839 | −0.19 | 0.26 | 69.4 | 18.0 | 3.13 |
+| 3 | 404 | 0.608 | +1.31 | 0.10 | 35.8 | 9.4 | 1.98 |
+| 4 | 367 | 0.581 | +0.40 | 0.23 | 55.0 | 7.9 | 2.61 |
+| 5 | 368 | 0.920 | +0.34 | 0.40 | 29.4 | 13.3 | 2.84 |
+| 6 | 390 | −0.036 | −1.72 | 0.18 | 8.8 | 5.6 | 1.17 |
+| 7 | 288 | 0.131 | +0.05 | 0.12 | 32.4 | 6.9 | 2.25 |
+| **pooled** | **2612** | **0.459** | **+0.18** | **0.23** | **43.9** | **9.4** | **2.47** |
 
-The pooled RANK lies within the multi-model CAPTEX range of 2.3–2.8 reported by
-Hegarty et al. (2013) for FLEXPART, HYSPLIT and STILT. On the per-station
-time-integrated dosage (n = 80) the pooled figure of merit in space is 0.96, the
-correlation 0.64 and FB +0.19.
+Three runs of this protocol give a pooled RANK of 2.46–2.47. The pooled RANK
+lies within the multi-model CAPTEX range of 2.3–2.8 reported by Hegarty et al.
+(2013) for FLEXPART, HYSPLIT and STILT. On the per-station time-integrated dosage
+(n = 80) the figure of merit in space is 0.96, the correlation 0.67, FA2 0.47,
+FA5 0.77 and FB +0.18.
 
-The spread between releases is large, as expected for individual synoptic cases.
-Release 2 reaches RANK 3.18 (R = 0.82) while release 6 is strongly
-under-predicted (R = −0.04). Removing release 6 from the pool changes the RANK
-by less than 0.02. Per-release scores are plotted in Fig. 6 of the model
-description paper.
+**Protocol of the preprint.** Table 3 of the preprint pooled the three-day runs
+with a four-day run of release 5 (n = 2897, RANK 2.43). The same protocol now
+gives RANK 2.48 (R 0.45, FB +0.10, FMS 42.4 %, KSP 9.8 %); the four-day release 5
+alone scores 2.35 (n = 653, R 0.65, FB −0.33).
 
-**Turbulence scheme.** Repeating the pooled evaluation with the Hanna scheme
-changes the RANK by less than 0.01 and every per-release score by at most 0.01.
-At the synoptic scale of CAPTEX the boundary-layer turbulence parameterisation
-is not the limiting factor, as found on ETEX-1.
+**Releases 5, 6 and 7 are not independent.** The seven releases use the same
+tracer, and releases 5 (26 October, Sudbury), 6 (28 October, Dayton, 32 kg) and
+7 (29 October, Sudbury, 183 kg) follow each other within three days. A run of
+one release is scored against samples that contain the tracer of the others:
+the fourth day of release 5 and most of the release 6 samples measure the plume
+of release 7. The rows 5 to 7 of the table, and the apparent under-prediction of
+release 6, should not be read as the skill of the model on each release.
+Simulating the three releases together gives RANK 2.30 (n = 715, R 0.45,
+FB +0.18, observed mean 180, model mean 215 pg m⁻³), and pooling this run with
+releases 1–4 gives RANK 2.46 (n = 2281, R 0.49, FB +0.33, FMS 46.3 %, KSP 8.3 %).
+
+The spread between releases 1 to 4 remains large, as expected for individual
+synoptic cases (RANK 1.98 to 3.13).
+
+**Turbulence scheme.** The preprint reported the Hanna scheme within 0.01 of the
+Thomson scheme. That comparison has not been repeated since the corrections.
 
 ## Output estimators
 
-CAPTEX is the control case for the ETEX-1 estimator attribution
+CAPTEX is the control case for the ETEX-1 estimator comparison
 (`ETEX_RESULTS.md`). No station lies in the dense near-source zone (the nearest
 are beyond 100 km), and the uniform and adaptive output kernels give
-indistinguishable scores. In a release-1 experiment the gridless receptor
-evaluation is the least biased estimator (FB +0.37, against +0.65 for the
-gridded product of the same run) at a median native resolution of 7–8 km on the
-0.25° grid.
+indistinguishable scores. The gridded deposits were not affected by the position
+correction listed in `CHANGES.md`, the output and meteorological grids having the same
+spacing. In a release-1 experiment made before the corrections the gridless receptor
+evaluation was the least biased estimator (FB +0.37, against +0.65 for the
+gridded product of the same run) at a median native resolution of 7–8 km.
 
 ## Forward–backward consistency
 
@@ -68,7 +85,7 @@ backward-to-forward ratio of 0.88, without any scaling. See
 
 ```bash
 CAPTEX_OBS=<CAPTEX dir> CAPTEX_MET=<ERA5 1983 dir> \
-  TURB=thomson CONV=massflux MODE=run DIRECTION=forward RELEASE=all \
+  TURB=thomson CONV=massflux MODE=run DIRECTION=forward RELEASE=all RUNDAYS=3 \
   julia -t 8 --project=easlee validation/validate_captex.jl
 ```
 

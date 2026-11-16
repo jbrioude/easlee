@@ -21,77 +21,106 @@ every station and 3 h window over the first 72 h of sampling (n = 2629, zeros
 included) and scored with the ATMES-II statistics, summarised by
 `RANK = R² + (1 − |FB|/2) + FMS/100 + (1 − KSP/100)`, range 0–4.
 
-## Reference run (uniform kernel, 72 h, n = 2629)
+## Reference run (uniform kernel, 72 h)
 
-| statistic | EASLEE | ideal |
-|---|---:|---:|
-| model mean (obs. 109.2 pg m⁻³) | 151.1 pg m⁻³ | obs. |
-| FB | +0.32 | 0 |
-| FA2 | 0.35 | 1 |
-| FA5 | 0.66 | 1 |
-| R (per window) | 0.66 | 1 |
-| FMS | 56.6 % | 100 % |
-| KSP | 8.4 % | 0 % |
-| **RANK** | **2.76** | 4 |
+Scores of v1.1.2. They replace those of the model description preprint
+(RANK 2.76), which were computed before two corrections listed in `CHANGES.md`:
+the position of the gridded deposits on a regular meteorological grid, and the
+surface-layer stability when no heat flux is archived.
 
-The composite rank is at the upper end of the range reported for FLEXPART,
-HYSPLIT and similar models on ETEX-1. The plume footprint overlap (FMS) and the
-concentration distribution (KSP) are both strong. Extending the run to the full
-four sampling days with 10⁶ parcels (n = 3083) gives RANK 2.41, with a moderate
-positive bias carried by the late, dilute windows.
+| statistic | all stations (n = 2629) | without station 8021 (n = 2607) | ideal |
+|---|---:|---:|---:|
+| observed mean | 109.2 pg m⁻³ | 99.2 pg m⁻³ | |
+| model mean | 421.5 pg m⁻³ | 93.4 pg m⁻³ | obs. |
+| FB | +1.18 | −0.06 | 0 |
+| FA2 | 0.34 | 0.35 | 1 |
+| FA5 | 0.68 | 0.68 | 1 |
+| R (per window) | 0.56 | 0.48 | 1 |
+| FMS | 57.1 % | 57.3 % | 100 % |
+| KSP | 8.6 % | 8.6 % | 0 % |
+| **RANK** | **2.20** | **2.69** | 4 |
 
-**Turbulence scheme.** The Hanna scheme gives pooled scores within 0.01 of
-composite rank of the Thomson scheme.
+The parcels are drawn at random, so two runs are not identical. Five runs of
+this configuration give RANK 2.20, 2.20, 2.20, 2.20 and 2.21 on all stations and
+2.68, 2.69, 2.69, 2.69 and 2.70 without station 8021; the table is the run at
+the centre of that spread.
+
+**Station 8021** (20 km from the release, 22 of the 2629 pairs) carries
+the whole difference between the two columns. Its observed mean is about
+1300 pg m⁻³ and the model gives about 39 000 pg m⁻³ there, thirty times more.
+With it the pooled bias, correlation and NMSE describe that one station; without
+it the model mean is within 6 % of the observed mean. The plume footprint (FMS)
+and the concentration distribution (KSP) do not depend on it. In the preprint the
+deposits were shifted by 1.5 cells of the 0.1° grid, which moved the near-source
+filament off this station and hid the over-prediction (RANK 2.76 with it,
+2.64 without).
+
+Extending the run to the four sampling days with 10⁶ parcels (n = 3083) gives
+RANK 2.06 (R 0.43, FB +1.16, FMS 55.6 %, KSP 9.9 %), and 2.58 without station
+8021. The preprint value of 2.41 is superseded.
+
+**Turbulence scheme.** The preprint reported the Hanna scheme within 0.01 of the
+Thomson scheme. That comparison has not been repeated since the corrections.
 
 ## Comparison with FLEXPART v11 (per-station dosage)
 
 Bakels et al. (2024) score ETEX-1 on the per-station time-integrated dosage
 (n = number of stations). Scored the same way, the four-day run gives
 
-| metric | EASLEE | FLEXPART v11 |
+| metric | EASLEE (n = 159) | FLEXPART v11 (n = 168) |
 |---|---:|---:|
 | FMS | 0.80 | 0.68 |
-| R | 0.74 | 0.84 |
-| FA2 | 0.41 | 0.74 |
-| FB | comparable | low |
+| R | 0.70 | 0.84 |
+| FA2 | 0.47 | 0.74 |
+| FA5 | 0.80 | 0.87 |
+| NMSE | 333 | 0.43 |
+| FB | +1.16 | |
 
-EASLEE places the tracer in the right regions and matches the spatial pattern,
-but the per-station amplitudes are noisier. The residual points to the
-calibration of the near-source vertical dilution (boundary layer depth,
-turbulence intensity, depth of the surface sampling layer) rather than to a
-transport-position error.
+EASLEE places the tracer in the right regions, but the per-station amplitudes
+are noisier. FB and NMSE are set by station 8021.
 
 ## Output estimators: uniform kernel, adaptive kernel, gridless receptors
 
-The same 72 h run scored with the adaptive kernel instead of the uniform
-deposit is essentially unbiased (FB = −0.04) but its correlation drops to 0.33
-(RANK 2.59). A pair-level attribution by distance from the source shows that the
-entire contrast between the two estimators, in correlation and in bias, comes
-from one station 20 km from the source (station 8021). The modelled filament
-passes about 0.2° north of the observed track. The uniform deposit spreads the
-filament over the neighbouring cells, fills the gap and counts as a detection,
-whereas the adaptive kernel, whose local bandwidth there (0.1–1 km) resolves the
-filament, reports the miss. Beyond 150 km from the source the two estimators
-are statistically identical (band means within 2 %, equal per-band
-correlations).
+The model offers two independent choices. The first is where the concentration
+is evaluated: on the output grid (the station value is interpolated from the
+four surrounding cells) or directly at the station coordinates, without a grid
+(`[output.receptors]`). The second, for the grid only, is how a parcel is
+deposited: over the four nearest cells (`kernel = "uniform"`, as in FLEXPART) or
+with a Gaussian whose width follows the local parcel density
+(`kernel = "adaptive"`). The gridless evaluation always uses the adaptive width.
 
-Two distinct points follow. The near-source azimuth error is a transport or
-meteorology issue, not a kernel one. And the adaptive kernel separates model
-error from representation error where the uniform deposit conflates them.
+RANK of the 72 h run, 4 × 10⁵ parcels:
 
-**Parcel-number sweep.** With the adaptive kernel the gridded scores are
-independent of the parcel count from 5 × 10⁴ to 8 × 10⁵ parcels, while the
-native resolution reported at the stations improves from a median of about
-12 km to 2.5 km, following the N⁻¹ᐟ² law of the model description paper
-(Eq. 15). Resolution is set by the number of trajectories, not by the output
-grid. A 0.2° twin of the 400 k run reproduces the station-sampled fields beyond
-150 km (correlation 0.95–0.98) and differs only at the near-source station,
-where the 22 km cells bridge the gap to the misplaced filament.
+| estimator | all stations | model mean | without 8021 | model mean |
+|---|---:|---:|---:|---:|
+| grid, uniform kernel (5 runs) | 2.20–2.21 | 422–424 | 2.68–2.70 | 93–95 |
+| grid, adaptive kernel (1 run) | 2.23 | 436 | 2.70 | 93 |
+| gridless receptors (5 runs) | 1.83–2.10 | 554–4066 | 2.64–2.70 | 87–103 |
 
-**Gridless receptors.** The adaptive-kernel point evaluation at the station
-coordinates reports a median native resolution of 4 km (p10 1 km, p90 21 km)
-on the 400 k run. Its bias and NMSE improve monotonically with the parcel count
-as the single-parcel spikes near the source shrink with the kNN bandwidth.
+Model means in pg m⁻³; observed 109.2 (all) and 99.2 (without 8021).
+
+Without station 8021 the three estimators agree within the spread between
+identical runs: on ETEX-1 the choice of estimator does not change the score. At
+station 8021 all three over-predict. The gridless value there changes by a factor
+of seven from one run to the next, because the point evaluation resolves
+individual parcels 20 km from the source (bandwidth of the order of 1 km); the
+all-station receptor score is therefore not reproducible at this parcel number.
+
+The preprint attributed the contrast between the uniform and adaptive kernels
+(RANK 2.76 against 2.59) to a filament passing 0.2° north of station 8021. That
+displacement was the offset of the gridded deposits; it is corrected and the
+attribution no longer holds.
+
+**Parcel-number sweep.** The native resolution reported at the stations improves
+from a median of about 12 km at 5 × 10⁴ parcels to 2.5 km at 8 × 10⁵, following
+the N⁻¹ᐟ² law of the model description paper (Eq. 15). Resolution is set by the
+number of trajectories, not by the output grid. The gridded scores of the sweep
+and of the 0.2° twin (`configs/etex_n*.toml`, `configs/etex_dx02.toml`) were
+computed before the correction of the deposit position and have not been
+repeated.
+
+**Gridless receptors.** The point evaluation at the station coordinates reports
+a median native resolution of 4 km (p10 1 km, p90 21 km) on the 400 k run.
 The receptor bandwidth is kept decoupled from the dispersion floor of the grid
 deposit, since the point evaluation does not renormalise and a widened
 bandwidth in a dense field over-counts. `min_bandwidth` in `[output.receptors]`
