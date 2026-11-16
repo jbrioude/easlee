@@ -13,8 +13,8 @@ authors:
   - family-names: Jia
     given-names: Yue
     orcid: "https://orcid.org/0000-0003-2210-9050"
-version: 1.1.1
-date-released: 2026-10-22
+version: 1.1.2
+date-released: 2026-11-16
 repository-code: "https://github.com/jbrioude/easlee"
 url: "https://gitlab.osureunion.fr/brioude/easlee"
 license: GPL-3.0-or-later

@@ -1,27 +1,21 @@
 # EASLEE benchmarks
 
-Two reference machines are used throughout this document.  They are named here so
-that any table below can be read without knowing which one produced it.
+Machine: laptop, 20-core CPU, **NVIDIA RTX A1000 6 GB** (Laptop), Julia, CUDA functional.
+All runs below: ETEX-1 ERA5 met (−10…30 °E × 40…70 °N), PMCH release from Monterfil,
+forward, Thomson turbulence, **convection off**, IFINE=5, output grid 0.25°.
 
-| name | CPU | GPU | software |
-|---|---|---|---|
-| **workstation** | AMD Threadripper 3970X, 32 cores / 64 threads, 220 GB RAM | NVIDIA RTX 4080 16 GB | Debian 13, Julia 1.12 |
-| **laptop** | 20-core mobile CPU | NVIDIA RTX A1000 6 GB | Julia with a functional CUDA |
+## 0. Server benchmark — zion (2026-07-17): thread-scaling curve + RTX 4080
 
-Unless stated otherwise every run uses the same protocol: ETEX-1 ERA5 meteorology
-(−10…30 °E × 40…70 °N), the PMCH release from Monterfil, forward transport, Thomson
-turbulence, **convection off**, IFINE = 5, output grid 0.25°.  Before each timing the
-sustained clocks were checked to be fully boosted (4.1–4.3 GHz all-core CPU,
-2.6–2.8 GHz GPU SM), so none of the numbers below are deflated by a power-saving
-governor.  Machines were otherwise idle and runs were sequential.
-
-## 0. Workstation benchmark (2026-07-17): thread-scaling curve + RTX 4080
-
-Protocol as in §1 (validate_captex.jl, NP=1000000 RUNDAYS=2 TURB=thomson CONV=off
-IFINE=5 DXOUT=0.25 RELEASE=1).  Meteorology: a fresh MARS retrieval 19941023–27
-with the surface companions.  Observations: NOAA DATEM, with emit-t1.txt
-reconstructed from the documented release (340 kg, 48.058 °N, −2.0083 °E,
-16:00 UTC + 11 h 50 m).  Wall clock is for the whole run including Julia startup.
+Machine: **zion**, AMD Threadripper 3970X (32 c / 64 t), **RTX 4080 16 GB**, 220 GB RAM,
+Debian 13, Julia 1.12.6.  Governor **schedutil** (no sudo → performance mode not
+settable); measured sustained clocks 4.1–4.3 GHz all-core CPU, 2.6–2.8 GHz GPU SM —
+i.e. fully boosted, timings NOT deflated ([[benchmark-governor-check]] satisfied).
+Same protocol as §1 (validate_captex.jl, NP=1000000 RUNDAYS=2 TURB=thomson CONV=off
+IFINE=5 DXOUT=0.25 RELEASE=1); met = fresh MARS retrieval 19941023–27 (same params
+as the 2025 archive pipeline + SFC companions; shortNames avg_* verified), obs =
+NOAA DATEM (emit-t1.txt reconstructed from documented release: 340 kg, 48.058 °N
+−2.0083 °E, 16:00 UTC + 11 h 50 m).  Whole-run wall clock incl. Julia startup;
+machine otherwise idle; runs sequential.  Logs: ~/zion_bench/ on zion.
 
 | backend | threads | wall clock | speedup vs 1 t | notes |
 |---------|--------:|-----------:|---------------:|-------|
@@ -29,7 +23,7 @@ reconstructed from the documented release (340 kg, 48.058 °N, −2.0083 °E,
 | `threads` | 2  | 57:58 (3478 s) | 1.92× | |
 | `threads` | 4  | 32:15 (1935 s) | 3.45× | |
 | `threads` | 8  | 20:36 (1236 s) | 5.41× | |
-| `threads` | 16 | 12:10 (730 s)  | 9.16× | laptop 16 t = 27:30, workstation 2.26× faster |
+| `threads` | 16 | 12:10 (730 s)  | 9.16× | laptop 16 t = 27:30 → zion 2.26× faster |
 | `threads` | 32 | 7:49 (469 s)   | 14.3× | all physical cores; parallel eff. 45 % |
 | `threads` | 64 | 6:22 (382 s)   | 17.5× | SMT step +1.23× |
 | `ka_gpu` (RTX 4080) | 4 | 7:44 (464 s) | — | first run, incl. CUDA kernel compile |
@@ -48,94 +42,41 @@ Reading:
   2.22) — same physics, only wall clock varies.  `ka_gpu` scores RANK 2.10/2.11,
   the same ka-vs-threads dispersal offset documented in §2 (laptop: 2.04 vs 2.15).
   Note absolute scores differ slightly from the laptop table (RANK 2.22 vs 2.15).
-  Controls rule out every input-side cause:
+  Controls run on zion 2026-07-17 rule out every input-side cause:
   - **Met**: laptop subsample (6 files, 19941027 1800 steps 7–9) **bit-identical**
-    to the workstation's MARS retrieval (max|Δ|=0 on 8325 fields; laptop-only extra `chnk`
+    to the zion MARS retrieval (max|Δ|=0 on 8325 fields; laptop-only extra `chnk`
     unused).  **Emit**: laptop emit-t1.txt value-identical to the reconstruction.
   - **RNG/sampling**: 3 identical 16 t runs → RANK 2.21–2.22, R ±0.000, FMS ±0.3
     (and all 7 thread counts scored 2.22) → sampling spread ±0.005, 10× too small.
-  - **12-bit jpeg repack** of the meteorological archive: RANK 2.22,
+  - **12-bit jpeg repack** (script_era5.sh recipe, /data/ETEX_JPEG): RANK 2.22 —
     **no score impact**; met-read cost +26 s of 756 s at 16 t (~3.5 %); 2.8×
     smaller on disk.  The archive recipe is safe.
-  - **Code drift**: the tree that recorded the laptop table, re-run on the
-    workstation, also gives RANK 2.21.  Not the code.
+  - **Code drift**: worktree at 4d84253 (the commit that recorded the laptop
+    table, pre-719c3ec k=Nk stencil fix) → RANK 2.21 on zion.  Not the code.
   The shift is systematic and backend-independent (+0.06–0.07 on threads AND
-  ka_gpu), and is most probably a Julia-version or hardware systematic between
-  the two machines.  The timing columns are unaffected by it.
+  ka_gpu).  OPEN: rerun the §How-to-reproduce command verbatim on the laptop —
+  if it now yields ≈2.22, the 2.15/2.04 rows came from different knobs (or
+  uncommitted state) at record time; if ≈2.15, it is a real Julia
+  1.12.5-vs-1.12.6 / hardware systematic.  Timing columns are unaffected.
 
-## 0c. v1.1 transport ports — ETEX regression (2026-09-13)
-
-Same config (`configs/output_etex.toml`, 400 k parcels, 72 h, 16 threads,
-Thomson, massflux), scored with `validation/check_etex.jl` (the pooled
-2629-station-window scorer of ETEX_RESULTS.md — NOT the validation-task RANK of
-the §0/§0b tables, which is a different scorer and not comparable):
-
-| tree | R | FB | FA2 | FA5 | FMS | KSP | RANK | wall |
-|------|--:|---:|----:|----:|----:|----:|-----:|-----:|
-| documented baseline (ETEX_RESULTS.md, framed engine) | 0.651 | +0.309 | 0.32 | 0.65 | 57.2 % | 9.3 | **2.75** | — |
-| v1.1 shared | 0.660 | +0.326 | 0.32 | 0.66 | 55.8 % | 8.3 | **2.75** | 11.6 min |
-
-RANK reproduced to the last digit; the components move within run-to-run RNG
-scatter.  Expected: none of the v1.1 ports touches an ERA5 (Hanna-fill,
-lon/lat-grid, single-nest) run — `horizontal_tke` is off and would be refused
-on ERA5 anyway, the per-nest closure collapses to the run-global one on a
-single nest, the projected-grid axes only engage on `crs = "native"`, and the
-Hanna runaway guard did not fire (no warning in the run log).  What DID change
-for this run is the release-slot cursor and the release step count, which are
-allocation order only.
-
-## 0b. Workstation re-run after the September 2026 kernel fixes (2026-09-05)
-
-Same machine, same protocol and knobs as §0 (validate_captex.jl, NP=1000000
-RUNDAYS=2 TURB=thomson CONV=off IFINE=5 DXOUT=0.25 RELEASE=1), mid-run CPU clocks
-4.0–4.1 GHz on the loaded cores, GPU SM 2.82 GHz at 100 % utilisation, machine
-otherwise idle, runs sequential.  New knob `MO=false` switches the
-Monin-Obukhov surface-layer wind off so that threads and `ka_gpu` run the
-SAME physics (the KA kernel does not implement it; since 2026-09-04
-`advance_dispatch!` would otherwise force the threads path).
-
-| backend | threads | MO | wall clock | RANK | July (§0) |
-|---------|--------:|:--:|-----------:|-----:|-----------|
-| `ka_gpu` (RTX 4080), cold | 4 | off | 290 s | 2.19 | 464 s / 2.11 |
-| `ka_gpu` (RTX 4080), warm | 4 | off | **282 s** | 2.20 | 294 s / 2.11 |
-| `threads` | 16 | off | 607 s | 2.21 | — |
-| `threads` | 32 | off | 408 s | 2.21 | — |
-| `threads` | 16 | on (production) | **606 s** | 2.20 | 730 s / 2.22 |
-
-Reading:
-- **Speed-up held**: RTX 4080 = **2.15× the 16-thread CPU** and **1.45× the
-  32-thread CPU** with identical physics (July: 2.48× vs 16 t, but against a
-  CPU row that carried the MO work the GPU skipped).  The kernel now runs the
-  Hanna/Thomson turbulence it used to drop (A2) and the entry/NaN guards (A4),
-  and the met stencil is uploaded only when it changes (B1) instead of every
-  step: the two effects roughly cancel on the GPU row (294 → 282 s), so the
-  whole-run time is still bounded by the shared CPU work (met read, deposit,
-  output, release) and the per-step state round trip.
-- **CPU rows 17 % faster than July** (730 → 606 s at 16 t) with unchanged
-  scores: the Monin-Obukhov correction is now evaluated only below the lowest
-  model level instead of two extra 4-D interpolations per parcel per sub-step
-  everywhere (B2a); MO on vs off is now free (606 vs 607 s).
-- **Parity offset closed**: `ka_gpu` scores 2.19–2.20 vs threads 2.20–2.21,
-  within the ±0.005 sampling spread measured in §0 (July: 2.11 vs 2.22, the
-  "ka disperses more" offset of §2, which was the (ctl+1)/2 vertical-wind bug
-  A1 plus the missing turbulence A2).  `ka_*` can now serve as a regression
-  oracle for the threads path when the CPU-only switches are off.
-- Cold vs warm GPU: 8 s (kernel compile cache).  GPU memory 619 MiB / 16 GB.
-
-## 0d. Benchmark matrix for the paper (workstation, 2026-09-23; supersedes §0 where they disagree)
+## 0b. Benchmark matrix for the paper — zion, 2026-09-23 (supersedes §0 where they disagree)
 
 Same protocol as §0 (ETEX, 1 M particles, 2 days, 15-min sync steps, Thomson turbulence,
 convection off, `surface_layer_wind = false`, uniform output kernel), run by
-`scripts/bench_matrix.sh` on an otherwise idle machine with the CPU fully boosted, one
-row after the other, each in its own batch unit.  The **GPU rows were re-measured on the
-Val-switch fix** (see "the GPU regression" below; the first GPU pass read
-295 / 293 / 210 / 211 s).  Numbers are **TOTAL(run)** from
+`scripts/bench_matrix.sh` on a QUIET machine (no other julia; the chemistry runs had
+finished 3 h earlier), CPU rows at commit `1c75d62` (KA fixes `8a12d39` included), **GPU
+rows re-measured the same morning on the Val-switch fix** (see "the GPU regression"
+below — the first GPU pass at `1c75d62` read 295 / 293 / 210 / 211 s, all four rows
+kept in `bench_matrix_20260922/`), governor
+`schedutil` (fully boosted, trap #7 satisfied), one row after the other, each in its own
+systemd unit with `HDF5_USE_FILE_LOCKING=FALSE`. Numbers are **TOTAL(run)** from
 `[run].benchmark = true` — run only, no Julia start-up (start-up is the difference to the
-"unit wall" column of the raw summary, 60–90 s). The tables are regenerated by
+"unit wall" column of the raw summary, 60–90 s). Raw logs and summary:
+`/data/jbrioude/easlee_results/bench_matrix_20260922/`; tables regenerated by
 `scripts/bench_matrix_table.py`. `PREFETCH=1` sets the met prefetch loader; `-t 16,1`
 gives it an interactive thread (rows `gpu_t16i*`).
 
-### Table A — every row (run-only seconds; ETEX 1 M parcels, 2 days; GPU rows and the 32-thread pair re-measured on the Val-switch fix)
+### Table A — every row (run-only seconds; ETEX 1 M parcels, 2 days; `bench_matrix_20260923_merged` = CPU rows of 03:02–07:24 + GPU rows re-measured 08:42–09:01 on the Val-switch fix + the 32-thread pair re-measured 10:04–10:18 (Jerome))
 
 | row | backend | threads | prefetch | TOTAL | metread | advection | output kernel | release | untimed | vs 1 t | vs 16 t |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -185,7 +126,7 @@ gives it an interactive thread (rows `gpu_t16i*`).
 - **Prefetch.** On the CPU it hides the met read (108 → 14 s) but moves the decode into
   the advance's wall time (+68 s at 16 t, +74 s at 32 t, +78 s at 64 t: the loader competes
   with the workers for cores and memory bandwidth), net −3 % / −4 % / −7 %. The 32-thread
-  pair was re-measured as a clean pair on the idle machine: 374 s
+  pair was re-measured as a clean pair on the quiet machine at Jerome's request: 374 s
   (reproducing the matrix row to 0.1 %) against 360 s with prefetch. On the GPU the CPU is idle while the
   kernel runs, so the read is hidden for free: **168 s, −33 %, the best row** — 3.4× the
   16-thread CPU and 1.76× the best CPU row (64 t + prefetch, 295 s). The remaining GPU run
@@ -194,8 +135,9 @@ gives it an interactive thread (rows `gpu_t16i*`).
 - **The GPU regression, found by this matrix and fixed the same morning.** The first GPU
   pass read 167 s in the advection group where the same config had given 128–137 s on
   21 September (under load) and 294 s whole-run in July. A three-point bisect on the quiet
-  machine: before the five-switch port **116.3 s**, the port itself **167.5 s**, head
-  **167.0 s**, so the whole +44 % is the port and the later KA fixes cost nothing. Cause: the switches (`use_hanna`, `mesoscale`, `kh_ft`,
+  machine (`/tmp/bisect_gpu.log`): `4345524` (before the five-switch port) **116.3 s**,
+  `2bdf8f8` (the port) **167.5 s**, head **167.0 s** — the whole +44 % is the port, the KA
+  fixes of `8a12d39` cost nothing. Cause: the switches (`use_hanna`, `mesoscale`, `kh_ft`,
   `horizontal_tke`, `horizontal_hanna`, `surface_layer_wind`) reached the kernel as runtime
   `Bool`s; the GPU compiler specialises on argument TYPES, so every branch was compiled
   into the one kernel and paid in registers and occupancy even with all five off. Fix
@@ -217,6 +159,54 @@ gives it an interactive thread (rows `gpu_t16i*`).
   different again: the CB05/strat solver is ~70 % of the wall clock and GC-bound
   (`BENCHMARKS_COSTCENTRES.md`).
 
+## 0c. Cost-centre speed-ups with convection ON — zion, 2026-10-01 (the paper's Table 5)
+
+Jerome (1 Oct 2026): *"it would be more informative if the speed-up factors for 16 or 32 CPU
+threads and GPU are shown for each category instead of the time spent in seconds."*  §0b gives
+every cost centre except convection, which the published ETEX protocol switches off.  The ETEX
+ERA5 carries `avg_umf`/`avg_dmf`/`cc`, so the same protocol was rerun with
+`[physics.convection] scheme = "massflux"` (`configs/bench_{cpu,gpu}_etex_1M_conv.toml`,
+switch verified at RunSpec level before launch) at 1 / 16 / 32 threads and on the GPU —
+sequential, one systemd unit per row, quiet machine, governor `schedutil`, commit `70a426f`.
+Raw logs and summary: `/data/jbrioude/easlee_results/bench_conv_20261001/`; the table is
+regenerated by `scripts/bench_costcentre_table.py --conv-only`.
+
+| cost centre | 1 t [s] | share @ 16 t | 16 t | 32 t | GPU (4 t) |
+|---|---:|---:|---:|---:|---:|
+| meteorological read + preparation | 86.9 | 17 % | 0.77× | 0.74× | 0.80× |
+| advection + turbulence | 5937.2 | 69 % | **12.94×** | **22.65×** | **41.60×** |
+| convection (mass-flux redistribution) | 482.1 | 11 % | 6.73× | 8.88× | 3.06× |
+| output gridding (deposit + uniform kernel) | 9.9 | 1 % | 1.01× | 1.00× | 1.03× |
+| release, bookkeeping, other | 7.4 | 1 % | 0.84× | 0.76× | 0.88× |
+| **whole run** | **6527.3** | 100 % | **9.81×** | **14.30×** | **15.14×** |
+
+Absolute totals: 6527 s (1 t), 665 s (16 t), 456 s (32 t), 431 s (GPU).  Against the
+convection-off matrix of §0b the same rows are 5910 / 576 / 374 / 249 s, i.e. convection adds
+8–73 % of wall clock depending on where the advance has gone.
+
+### Reading
+
+- **Convection parallelises, but only half as well as the advance**: 6.7× at 16 threads and
+  8.9× at 32 against 12.9× and 22.7× for the advance.  It is `Threads.@threads :static` over
+  the parcels of each nest like the advance, but each parcel walks a *column* (profile
+  extraction, flux build, the conveyor and the subsidence walk), so it is memory-bound on the
+  3-D met arrays rather than compute-bound, and it keeps a per-thread buffer set.
+- **Convection is the bottleneck of a GPU run.**  The mass-flux redistribution has no device
+  path — it runs on the CPU with whatever threads the GPU row is given (4 here) — so its GPU
+  column is a 4-thread CPU figure, 3.06×, and it becomes **37 % of the GPU run** (157.5 s of
+  431 s) against 11 % at 16 threads.  The whole-run GPU speed-up therefore falls from 23.7×
+  (convection off) to 15.1×.  Porting convection, or simply giving the GPU row more CPU
+  threads (`-t 16` instead of `-t 4`), is the next lever for full-physics GPU runs.
+- **Everything else is serial and flat**, as in §0b: met read 0.74–0.80× (it *slows* with
+  threads, 87 → 117 s, GC on 14 GiB of allocation), output kernel 1.00×, release 0.8×.  With
+  the asynchronous prefetch the met read is hidden (§0b: 5.6×, and 35.2× whole-run on the GPU
+  with convection off); the convection matrix was run without prefetch so that the four rows
+  differ by thread count alone.
+- **The practical reading for a user**: the whole run gains ~10× at 16 threads and ~14× at 32;
+  beyond that the serial floor (met read + output + bookkeeping ≈ 130 s) and the poorly
+  scaling convection dominate, which is why the 64-thread and GPU rows of §0b add little once
+  full physics is on.
+
 ## 1. Advance backend — GPU vs CPU (performance)
 
 The parcel advance can run on three backends, selected by `EASLEE_ADVANCE`:
@@ -237,10 +227,34 @@ Notes:
   the total speedup (~1.8×) is well below the advance-kernel speedup alone.
 - **Memory is a non-issue**: the entire ERA5 met stencil + 1 M parcels used only
   **432 MiB of 6 GB**. Much larger particle counts / domains fit easily.
-- **Headroom** (not yet done): upload met only on met-refresh (not every step),
-  gather only the *active* parcels instead of the full arrays, and deposit on the
-  GPU (`output/conc_ka.jl` already exists). These target the copy + CPU-deposit
-  bottlenecks and should push the speedup well past 2×.
+- **Headroom — REVISED 2026-09-21 after measuring, and the first item is already done.**
+  *Met upload only on refresh* was implemented on 2026-09-04 (review A5,
+  `advance_ka_gpu.jl`): device met buffers are resident, a bracket change forces a
+  full re-upload, and a ~1024-element strided fingerprint per array catches in-place
+  edits so only changed arrays are copied. The other two items were sized with
+  `[run] benchmark = true` on this very config:
+
+  | group | `-t 4` | `-t 16,1` | share |
+  |---|---:|---:|---:|
+  | **metread** | **225.0 s** | **176.1 s** | **53–57 %** |
+  | advection (GPU kernel + copies) | 137.0 | 128.5 | 34–38 % |
+  | release | 14.5 | 12.1 | 4 % |
+  | **output (deposit)** | **13.2** | **12.2** | **3.3 %** |
+  | TOTAL | 397.9 | 335.8 | |
+
+  So **the GPU deposit is worth at most 3.3 %** — and only for `kernel = "uniform"`;
+  the adaptive kernel (the super-linear cost centre, 272.9 s at 20 M parcels in
+  `BENCHMARKS_COSTCENTRES.md`) has no KA implementation at all. **Reading the met is
+  the run.** Two findings on it: `prefetch.jl` spawns its loader on the `:interactive`
+  pool, which `-t 4` does not provide, and giving it one (`-t 16,1`) cut metread by
+  49 s and the whole run by 16 %; and the met read allocates **14 GiB** over 193 calls
+  (~74 MB per call), i.e. it decodes into fresh arrays rather than preallocated
+  buffers. Those are the two levers worth pulling, not the deposit.
+
+  ⚠ Both rows above were measured while three 8-day chemistry runs held 48 of the
+  machine's 64 threads, so the ABSOLUTE times are inflated against the 294 s in the
+  table above (which was measured on a quiet machine). The comparison between the two
+  columns is indicative, not clean — repeat it on a quiet machine before quoting.
 
 ## 2. Backend correctness / parity
 
@@ -262,53 +276,20 @@ Notes:
 Reading the parity:
 - **`ka_gpu` ≡ `ka_cpu`** (same kernel) — confirmed: FB identical, RANK 1.89 vs 1.88.
   The GPU implementation is numerically correct relative to the KA kernel.
-- **`ka_*` ≈ `threads` but not identical** (tables above, pre-2026-09-04 code).
-  The ~0.1 RANK offset was traced to two KA-kernel bugs (vertical mean wind
-  applied (ctl+1)/2 times; default Hanna turbulence run as no turbulence) and
-  is closed: see §0b (2.19–2.20 vs 2.21 at 1 M parcels) and
-  `test/test_ka_parity.jl`.  The validated threads path remains the reference;
-  `ka_*` now reproduces it when the CPU-only switches (§3) are off.
+- **`ka_*` ≈ `threads` but not identical.** The KA kernel is a *reimplementation*
+  of the Thomson turbulence advance; it disperses slightly more than the
+  production threads path (lower FB / RANK by ~0.1). Differences come from the
+  turbulence sub-stepping detail, not RNG alone. For science, the validated
+  threads path remains the reference; `ka_*` is for GPU acceleration studies.
 
 ## 3. Known limitations of the KA / GPU advance
 
-- **Turbulence**: Thomson, `Hanna(false)` (pre-computed σ_w/T_L fields — the
-  ERA5/GFS/MERRA-2/WRF default, run through the same Thomson body as the CPU)
-  or none.  Hanna on-the-fly (`turbswitch = true`), the mesoscale OU term,
-  `kh_ft > 0` and the Monin-Obukhov surface layer are `threads`-only:
-  `advance_dispatch!` forces the threads path and warns once naming the switch
-  (before 2026-09-04 the KA kernel silently dropped them).
-- **IFINE is hard-coded to 5** in the KA wrapper (ignores the config / `IFINE` env).
-- **Convection** is unaffected: it is a separate operator-split step applied after
-  the advance regardless of backend, so `ka_*` runs still include mass-flux
-  convection.
-- The GPU path keeps one resident buffer set **per nest** and uploads the 8 met
-  arrays only when they changed — detected from the met bracket
-  (`nestrunconfig.t_index`, written by `readmetfiles!`/prefetch when a slot is
-  refilled) plus a sampled fingerprint (~1024 strided elements per array, bit
-  hash) that catches in-place edits leaving `t_index` alone.  The 12 state
-  arrays are still uploaded/downloaded every step (gather of the active set is
-  the remaining headroom item of §1).
-- **Per-parcel RNG**: seeded from (slot, first-advance time, run seed) through
-  splitmix64; `EASLEE_SEED=<integer>` changes the ensemble (default: fixed
-  constant → reproducible).  Before 2026-09-04 the seed was the slot index
-  alone, so successive occupants of a slot replayed identical noise.
-
-### KA-kernel review fixes (2026-09-04) — `test/test_ka_parity.jl`
-
-Synthetic-met parity test (threads vs `ka_cpu`, and `ka_gpu` with
-`EASLEE_GPU=1`), all asserting against the CPU path:
-
-| fix | symptom before | check |
-|-----|----------------|-------|
-| A1 vertical wind applied (ctl+1)/2 times (accumulated `dlev` re-added each sub-step) | 3x the descent at ctl=5 | per-parcel `indl` identical to threads (max\|Δ\| = 0) |
-| A5 Float32 `while inc_time < Δt` sub-step loop ran ctl+1 sub-steps for ~20 % of (Δt, ctl) | 10/9 at Δt=3 s, ctl=9 | Δindl = W·Δt within 0.5 %, identical to threads |
-| A2 `Hanna(false)` demoted to NoTurb | zero vertical spread in the PBL | std(Δindl) ka/threads = 1.02–1.04 (1 km PBL, 2 h) |
-| A4 no entry / NaN guards | OOB read (`unsafe_trunc` on index 0), NaN positions | OOB parcels untouched with Dtime held; NaN met cell → zero displacement |
-| A7 slot-only RNG seed | replayed noise on slot reuse | reused slot gets a different stream |
-| A5 met re-uploaded every step, one buffer set for all nests | copy bound, realloc per step on nests | in-place met change detected on the GPU (Δ doubles) |
-
-### 3b. Validation record for the ported switches (2026-09-23)
-
+- ⚠ **`[physics] surface_layer_wind` DEFAULTS TO `true`, and it forces the threads
+  advance.** Any config that does not set it to `false` silently runs on the CPU
+  whatever `EASLEE_ADVANCE` says — the only evidence is a `Warning: ... overriding
+  EASLEE_ADVANCE=... with threads` line in the log. **Check the log for
+  `mode = :ka_gpu` before believing a GPU timing.** (This invalidated a first
+  attempt at the Hanna validation on 2026-09-21: both "backends" were the CPU.)
 - **2026-09-21: NOTHING is threads-only any more.** `mesoscale`, `kh_ft`,
   `horizontal_tke`, `horizontal_hanna` and `[physics] surface_layer_wind` all run
   on the KA path (`advance_ka.jl`; the mesoscale OU state joins the resident set,
@@ -329,7 +310,8 @@ Synthetic-met parity test (threads vs `ka_cpu`, and `ka_gpu` with
   **Re-validated 2026-09-23 on the Val-switch fix** (the switches now reach the kernel
   as types, §0b): threads vs ka_gpu, all five on, ETEX 200 k / 12 h, each leg's backend
   confirmed from its log, **2.34e-3 apart in mass, correlation 0.999935**
-  (`scripts/ka_compare_grids.py`, outputs `bench_all5_{threads,ka_gpu}`).
+  (`scripts/ka_compare_grids.py`; outputs `bench_all5_{threads,ka_gpu}`, the 22 Sept
+  ones archived as `*_PREFIX_20260922`).
 - **Well-mixed criterion on the device-side Hanna (2026-09-22,
   `test/test_wellmixed_pbl_4d.jl`)** — the physics test for a Langevin scheme,
   independent of any backend comparison: 100 k parcels started uniform in air mass
@@ -393,7 +375,6 @@ Synthetic-met parity test (threads vs `ka_cpu`, and `ka_gpu` with
 - The current GPU path uploads met + full state each step (correctness-first); see
   §1 "headroom" for the optimisations that remain.
 
-
 ## How to reproduce
 
 Two TOMLs now carry the protocol, so the benchmark needs no observation files
@@ -431,7 +412,7 @@ on 8 CPU threads (kernel compile + per-step host<->device copies dominate).
 The original env-var route still works:
 
 ```bash
-CAPTEX_OBS=<ETEX obs dir> CAPTEX_MET=<ETEX met dir> EASLEE_ADVANCE=ka_gpu MO=false \
+CAPTEX_OBS=<ETEX dir> CAPTEX_MET=/data/ETEX EASLEE_ADVANCE=ka_gpu MO=false \
   TURB=thomson CONV=off IFINE=5 MODE=run DIRECTION=forward RELEASE=1 \
   NP=1000000 RUNDAYS=2 DXOUT=0.25 julia -t 4 --project=easlee validation/validate_captex.jl
 ```
@@ -439,5 +420,175 @@ CAPTEX_OBS=<ETEX obs dir> CAPTEX_MET=<ETEX met dir> EASLEE_ADVANCE=ka_gpu MO=fal
 (`MO=false` was added to validate_captex_run.jl for exactly the reason above; it
 is not in the July command line because the switch did not exist yet.)
 
-A standalone copy of these instructions, paired with the meteorology, is in
-`docs/README_GPU_BENCHMARK.md`.
+## Full-physics per-process benchmark (2026-07-09, domain-fill chemistry)
+
+Domain-fill CB05×CAMS chemistry on a cropped 20°×15° Pacific box
+(`[meteorology].crop="auto"` → 85×65×138 of the global 0.25° ERA5 grid),
+250k parcels, 4×5-min sync steps spanning one ERA5 file rotation, chemistry
+every step, ALL production physics on: hanna turbulence, mass-flux convection
++ wet dep, pairwise chem mixing, LUT photolysis + cloud τ, CAMS aerosols/het/
+AOD.  20-core box, RTX A1000.  Per-step = group total / 5 calls; chemistry has
+~±7 % run-to-run solver variance (adaptive steps).
+
+| process (bench group)      | CPU 1 thr | CPU 6 thr | scaling | share (6 thr) |
+|----------------------------|-----------|-----------|---------|---------------|
+| chemistry (CB05 solver + J)| 59.4 s/st | 27.3 s/st | 2.2×    | 78 %          |
+| met read + field calc      | 13.8      | 5.8       | 2.4×    | 17 %          |
+| advection (incl. turb)     | 3.9       | 0.85      | 4.6×    | 2.4 %         |
+| convection (mass-flux)     | 1.77      | 0.38      | 4.7×    | 1.1 %         |
+| CAMS reseed                | 0.29      | 0.29      | 1×      | 0.8 %         |
+| chem extract (T/p/cld-τ)   | 0.26      | 0.11      | 2.3×    | 0.3 %         |
+| pairwise mixing            | 0.068     | 0.068     | 1×      | 0.2 %         |
+| wet deposition             | 0.095     | 0.064     | 1.5×    | 0.2 %         |
+| output (streamed frame)    | 0.16/frame| 0.17/frame| —       | 0.5 %         |
+
+Derived (A/B toggles — these live inside hot kernels, not separable by timer):
+- **turbulence** = Δadvection(hanna − none) = **0.77 s/step** — 90 % of the
+  advection cost, 2.2 % of the run.
+- **LUT photolysis** = Δchemistry(lut − analytic) ≈ **0 within the ±7 % solver
+  variance** (the analytic run came out *slower*); the TUV table lookup is
+  effectively free.  Cloud-τ extraction: 0.08 s/step.
+
+GPU (`EASLEE_ADVANCE=ka_gpu`, advance only — CB05 chemistry is CPU by design):
+- at 250k parcels GPU advection is **2.5× slower** than 6 CPU threads
+  (10.7 vs 4.25 s per 5 calls: per-step met+state upload dominates at this
+  size); the §1 result (~1.8× GPU win) needs ≥ ~1M parcels.  Everything else
+  unchanged → hybrid GPU-advance/CPU-chemistry only pays at 1M+.
+- GPU *chemistry*: three findings.  (i) Install the optional stack as
+  `Pkg.add([... "DiffEqGPU@3.15" ...])` — the LATEST DiffEqGPU does not
+  precompile against the SciMLBase 3.x this model pins (the run then warns and
+  falls back to CPU).  (ii) The ENGINE deliberately forces CPU chemistry
+  (`gpu_thresh = typemax(Int)`, build_run.jl): the engine feeds per-parcel
+  H2O/lat/lon into the solver — scientifically required — and the GPU kernels
+  only support scalar H2O, so GPU routing would silently degrade the
+  chemistry.  (iii) Even routed directly (micro-benchmark, identical 250k
+  input, bit-identical output), bb12-GPU is 1.28× SLOWER than 6 CPU threads on
+  this card at 100 % GPU utilisation — the RTX A1000 executes Float64 at 1/32
+  of FP32, capping any Float64 stiff solve at ~CPU parity.  GPU chemistry
+  needs an FP64-strong card (A100-class) or mixed-precision kernels, plus
+  per-parcel-H2O support, to be worth switching on.  (bb12 CPU: 2.7 s/step vs
+  CB05's 27.3 — mechanism size is worth 10× before any GPU.)
+- Overlapping GPU advance with CPU chemistry is not worth building: advance is
+  3 % of the step — the overlap ceiling.  The lever with actual headroom is the
+  chemistry solver's allocation churn (30 GiB/step at 250k parcels — the GC
+  serialisation behind the 2.2× thread scaling); cutting it would speed EVERY
+  configuration.
+
+Peak RSS: 6.5–7.6 GB (cropped; +1 GB with the CUDA context loaded).
+
+## CB05 Jacobian sparsity scan (2026-07-09) — sparse-GPU-kernel feasibility
+
+FD Jacobian of `rhs_cb05!` at six states (BL/FT/UT × day/night + polluted BL),
+composition from `cb05_background()` ±50 %:
+
+| pattern | nnz | of 49² | UMFPACK LU fill | per-thread factors |
+|---|---|---|---|---|
+| dense (reference) | 2401 | 100 % | — | 19.2 KB |
+| structural union | 404 | 16.8 % | 555 | **4.3 KB** |
+| numerically-active union | 277 | 11.5 % | 371 | 2.9 KB |
+
+- Pattern is REGIME-STABLE (380–403 structural nnz per state) → one compiled
+  KPP-style unrolled sparse-LU pattern serves all regimes, no divergence.
+- Block structure: one 41-species strongly-connected core + 8 feed-forward
+  singletons (substitution-eliminable).  No small-block decomposition —
+  everything couples through OH/NOx; the win is sparsity (4.4×), not blocks.
+- Feasibility: 4.3 KB factors + 1.2 KB state per parcel; batched SoA layout →
+  ~5.5 GB device memory at 1M parcels (fits a 16 GB card).  In Float64 a
+  sparse CB05 kernel on a 1/64-FP64 consumer card is a modest win; mixed
+  precision is the transformative step.
+
+Per-parcel H2O/lat/lon in GPU chemistry (same date): the bb12 GPU path now
+consumes the per-parcel vectors (they enter the parameter build; kernel
+unchanged) — verified vs CPU to solver tolerance (max rel 4e-3, mean 5e-4)
+with a 41× max-rel effect vs the old scalar H2O.  The engine gate is now
+mechanism-dependent: bb12 routes to GPU under EASLEE_GPU=1; all other
+mechanisms stay CPU-forced until their kernels support the per-parcel inputs.
+
+## RB23 thread-scaling re-measure (2026-07-10)
+
+*(Mode caveat: measured under the POWERSAVE governor — post-reboot default,
+noticed later that day.  The 2026-07-09 tables above are performance-mode.
+Thread-scaling and allocation numbers are mode-insensitive; the absolute
+s/call are deflated and must not be compared across the sections.)*
+
+Same domain-fill CB05×CAMS Pacific setup (crop auto, 250k parcels, 4×5-min
+sync steps, all production physics), but the config's own 15-min chemistry
+step (2 chemistry calls; per-CALL numbers below solve dt = 900 s — do not
+compare per-step against the 2026-07-09 FBDF table, which solved dt = 300 s
+every step) and the now-default `solver="rb23"`:
+
+| chemistry (rb23) | 1 thr | 6 thr | scaling |
+|---|---|---|---|
+| time / call | 52.5 s | 19.7 s | **2.7×** |
+| alloc / call | 2.13 GiB | 2.13 GiB | — |
+
+- Allocation churn is down ~14× vs the FBDF path (2.1 vs ~30 GiB per call) on
+  top of the 3–5× absolute speedup, but 6-thread scaling only moved 2.2× →
+  2.7×: **solver allocations no longer explain the gap**.  The remaining
+  serialisation is the still-nonzero GC pressure (2 GiB/call is not free) +
+  memory bandwidth of the per-parcel dense 49×49 LU workspaces.
+- metread scales 3.4× (17.8 → 5.2 s/step); everything else is noise at this
+  scale.
+- Consequence for the roadmap: with chemistry now 19.7 s / 15-min call at
+  250k on 6 threads, further CPU alloc work is LOW priority; the bigger
+  remaining lever for chemistry-dominated runs is the CB05 sparse-FP32 GPU
+  stage 2 (above), or simply the rb23 CPU path as-is.
+
+## 24-h Pacific chemistry: FBDF-CPU vs rb23-fp32-GPU — sanity check (2026-07-11)
+
+Same config (1M parcels, 24 h, domainfill CB05 × CAMS, chemistry every
+15 min) as the production run of record (results/chem_pacific/run_24h_v1.log,
+FBDF fp64 CPU, performance governor, uncapped): chem_pacific_gpu32.toml =
+solver rb23 + precision fp32 + EASLEE_GPU=1.  NOT a clean benchmark — the
+rerun carried two handicaps: 16 of 24 sim-hours under the powersave governor
+(CPU 400 MHz floor, GPU 210/2100 MHz; switched mid-run) and a systemd
+MemoryHigh=36G cap with a 47.4 GB peak → reclaim throttling.  Clean rerun
+deferred (with the RTX 4080 columns).
+
+- Wall: 30 382 s → **13 982 s (2.2×)** despite the handicaps.  Segment paces
+  9.6 (powersave) vs 7.9 (performance) min per sim-hour → clean-performance
+  extrapolation ≈ 3.2–3.5 h (~2.5×), likely better uncapped.
+- Chemistry proper: **1737 s (12.4 % of the run, 97 calls — ~18 s per 1M-parcel
+  call, mostly under the throttled GPU)**.  The old run predates the chemistry
+  bench group; subtracting the shared non-chemistry cost estimates its
+  chemistry at ~18 ks → **chemistry speedup ≈ 10×** (rb23 3–5× × GPU, as
+  predicted by the component benchmarks).
+- Science: species-by-species vs the old output — O3 corr 0.990 / ratio
+  0.9998, CO 0.992 / 1.0002, CH4 0.995 / 1.0000; the inert CH4 correlation IS
+  the parcel-position noise floor (unseeded turbulence RNG), so the reacting
+  species are indistinguishable at the resolvable level.  Radical/NOx totals
+  move a few % (OH −0.9 %, HO2 −4.2 %, NO +3.9 %) — the FBDF-legacy-defaults
+  outlier + fp32 floor, far inside the mechanism's ±15–35 % CAMS envelope.
+  O3 final-frame mean profile ratio 1.000 ± 0.001 at every level.
+- FINDING for the next optimisation pass: BOTH runs spend ~10.5 ks
+  (~39 s/step, now 75 % of the accelerated run) in per-step work outside every
+  bench group (suspects: output/conc deposit at 1M, domainfill inject/cull,
+  GC/reclaim; the advection group's 21 s total says transport is largely
+  untracked too).  Add bench groups before the clean benchmark.
+
+## The untracked 39 s/step — named (2026-07-11, instrumented rerun)
+
+2-h slice of the Pacific GPU-fp32 run with new bench groups (:chemgrid =
+chemconc_sample!, :dfill = domainfill inject+cull, :sync), performance
+governor, MemoryHigh=46G (no reclaim), 1M parcels.  TOTAL 1398 s = init
+~860 s (CAMS seeding + met scan + build) + 24 × ~21.5 s/step, FULLY
+attributed:
+
+| per step | s | share of step |
+|---|---|---|
+| **chemgrid (chemconc_sample!)** | **14.2** | **66 %** |
+| chemistry (fp32 GPU, ÷ steps) | 3.8 | 17 % |
+| metread | 1.6 | 7 % |
+| chem_extract | 1.2 | 6 % |
+| cams_reseed | 0.5 | 2 % |
+| dfill / advection / rest | 0.4 | 2 % |
+
+The 24-h run's "39 s/step untracked" was this ×(powersave + memory-reclaim).
+chemconc_sample! loops 49 species × 1M parcels EVERY transport step and
+allocates 1.3 GiB/step.  Fixes, in order of value: (1) sample the chemistry
+grid at the output.sample cadence like the transport grid (immediate ~3×);
+(2) kill the per-call allocations; (3) thread it.  With chemgrid fixed the
+projected 24-h wall is ~init + 24×(7 s/step)×12 ≈ 1.0–1.2 h — the original
+1.5 h estimate was right once the REAL bottleneck is removed.
+Note advection at 1M really is 0.08 s/step (simple memory-bound loop) — the
+earlier suspicion was unfounded.
